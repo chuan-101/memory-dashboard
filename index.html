@@ -6,9 +6,107 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Memory：Me&GPT</h1>
-  <input type="file" id="fileInput">
-  <div id="dashboard" hidden>这里稍后会出现仪表盘</div>
-  <script src="main.js"></script>
+  <header class="page-header">
+    <h1>Memory：Me&GPT</h1>
+    <div class="header-controls">
+      <label class="theme-selector">
+        <span>主题</span>
+        <select id="themeSelect">
+          <option value="echoes">Echoes</option>
+          <option value="logic">Logic</option>
+          <option value="emotion">Emotion</option>
+        </select>
+      </label>
+    </div>
+  </header>
+  <main>
+    <section class="controls">
+      <div class="control-group">
+        <label for="fileInput">导入对话 JSON</label>
+        <input type="file" id="fileInput" accept="application/json">
+      </div>
+      <form id="nameOverrides" class="control-group">
+        <fieldset>
+          <legend>角色命名</legend>
+          <div class="field-pair">
+            <label for="userName">用户名称</label>
+            <input type="text" id="userName" name="user" placeholder="例如：Me">
+          </div>
+          <div class="field-pair">
+            <label for="assistantName">助手名称</label>
+            <input type="text" id="assistantName" name="assistant" placeholder="例如：GPT">
+          </div>
+          <div class="field-pair">
+            <label for="stopWords">停用词（以逗号或换行分隔）</label>
+            <textarea id="stopWords" rows="2" placeholder="的,了,和,..."></textarea>
+          </div>
+          <button type="submit">保存偏好并刷新仪表盘</button>
+        </fieldset>
+      </form>
+    </section>
+
+    <section id="status" class="status" role="alert" aria-live="polite"></section>
+
+    <section id="dashboard" hidden>
+      <div class="kpi-grid">
+        <article class="kpi-card" id="kpi-earliest">
+          <h3>最早消息</h3>
+          <p class="kpi-value">--</p>
+          <p class="kpi-detail">--</p>
+        </article>
+        <article class="kpi-card" id="kpi-streak">
+          <h3>连续活跃天数</h3>
+          <p class="kpi-value">--</p>
+          <p class="kpi-detail">--</p>
+        </article>
+        <article class="kpi-card" id="kpi-peak-hour">
+          <h3>高峰时段</h3>
+          <p class="kpi-value">--</p>
+          <p class="kpi-detail">--</p>
+        </article>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-card" id="chart-card-f1">
+          <header><h3>F1 · 月度消息量</h3></header>
+          <canvas id="chartF1"></canvas>
+        </div>
+        <div class="chart-card" id="chart-card-f2">
+          <header><h3>F2 · 小时分布</h3></header>
+          <canvas id="chartF2"></canvas>
+        </div>
+        <div class="chart-card" id="chart-card-f3">
+          <header><h3>F3 · 角色消息数</h3></header>
+          <canvas id="chartF3"></canvas>
+        </div>
+        <div class="chart-card" id="chart-card-f4">
+          <header><h3>F4 · 角色字数</h3></header>
+          <canvas id="chartF4"></canvas>
+        </div>
+        <div class="chart-card" id="chart-card-f5">
+          <header><h3>F5 · 模型使用占比</h3></header>
+          <canvas id="chartF5"></canvas>
+        </div>
+        <div class="chart-card" id="chart-card-f6">
+          <header><h3>F6 · 每日互动趋势</h3></header>
+          <canvas id="chartF6"></canvas>
+        </div>
+        <div class="chart-card" id="chart-card-f7">
+          <header><h3>F7 · 周内活跃度</h3></header>
+          <canvas id="chartF7"></canvas>
+        </div>
+      </div>
+
+      <div class="wordcloud-card">
+        <header><h3>F8 · 关键词云</h3></header>
+        <div id="wordCloud"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/wordcloud2.js@1.2.2/src/wordcloud2.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jieba-zh-cn@2.1.6/dist/jieba.min.js"></script>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
