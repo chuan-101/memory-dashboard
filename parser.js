@@ -40,7 +40,10 @@ export class Parser {
 
     const normalized = messages
       .map(message => this.normalizeMessage(message))
-      .filter(message => !!message && !!message.text && message.text.trim().length);
+      .filter(
+        message =>
+          !!message && typeof message.text === 'string' && message.text.trim().length
+      );
 
     if (!normalized.length) {
       throw new Error('未找到有效的消息文本内容。');
@@ -382,7 +385,12 @@ export class Parser {
       return null;
     }
 
-    const { role: baseRole, text } = this.normalizeCoreFields(raw);
+    const coreFields = this.normalizeCoreFields(raw);
+    if (!coreFields) {
+      return null;
+    }
+
+    const { role: baseRole, text } = coreFields;
     const role = this.getRole({ ...raw, role: baseRole });
     const timestamp = this.extractTimestamp(raw);
     const model = this.extractModel(raw);
@@ -453,11 +461,24 @@ export class Parser {
       text = this.extractText(msg);
     }
 
-    if (!role || !text) {
+    const normalizedRole = (role ?? '').toString().trim();
+    if (!normalizedRole) {
       throw new Error('消息结构不完整，无法解析 role 或 content。');
     }
 
-    return { role, text };
+    if (typeof text === 'string') {
+      text = text.trim();
+    } else if (text == null) {
+      text = '';
+    } else {
+      text = `${text}`.trim();
+    }
+
+    if (!text) {
+      return { role: normalizedRole, text: '' };
+    }
+
+    return { role: normalizedRole, text };
   }
 
   getRole(message) {
