@@ -51,17 +51,24 @@ export class App {
     }
 
     try {
-      const text = await this.readFile(file);
-      const parsed = this.parseJson(text);
-      const rawMessages = this.extractMessages(parsed);
-      const messages = this.validateMessages(rawMessages);
+      const text = await file.text();
+      const raw = JSON.parse(text);
+      const candidates = this.extractMessages(raw);
+      const normaliser = Parser.normaliseArray ?? Parser.normalizeArray;
+      const cleaned = typeof normaliser === 'function' ? normaliser(candidates) : [];
 
       if (!cleaned.length) {
         throw new Error('未找到可用于统计的 user/assistant 文本；请检查导出格式。');
       }
 
       this.activeMessages = cleaned;
-      await this.refreshDashboard();
+
+      if (typeof this.dashboard.renderAll === 'function') {
+        this.dashboard.renderAll(cleaned);
+      } else {
+        await this.refreshDashboard();
+      }
+
       this.updateStatus('success', `成功导入 ${cleaned.length} 条消息。`);
     } catch (error) {
       console.error(error);
@@ -171,117 +178,95 @@ export class App {
       .filter(Boolean);
   }
 
-  readFile(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('读取文件失败。'));
-      reader.onload = event => resolve(event.target.result);
-      reader.readAsText(file, 'utf-8');
-    });
-  }
+  extractMessages(raw) {
+    const results = [];
+    const seen = new WeakSet();
 
-  parseJson(text) {
-    try {
-      return JSON.parse(text);
-    } catch (error) {
-      throw new Error('文件内容不是合法的 JSON。');
-    }
+    const looksLikeMessage = candidate => {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+        return false;
+      }
+
+      const hasRole =
+        typeof candidate.role === 'string' ||
+        typeof candidate.author === 'string' ||
+        typeof candidate.sender === 'string' ||
+        typeof candidate.participant === 'string' ||
+        typeof candidate.author?.role === 'string';
+
+      const hasContent =
+        candidate.content !== undefined ||
+        candidate.parts !== undefined ||
+        candidate.text !== undefined ||
+        candidate.delta !== undefined;
+
+      return hasRole || hasContent;
+    };
+
+    const pushMessage = message => {
+      if (!message || typeof message !== 'object' || Array.isArray(message)) {
+        return;
+      }
+      if (seen.has(message)) {
+        return;
+      }
+      if (!looksLikeMessage(message)) {
+        return;
+      }
+      seen.add(message);
+      results.push(message);
+    };
+
+    const visit = node => {
+      if (!node) {
+        return;
+      }
+
+      if (Array.isArray(node)) {
+        node.forEach(visit);
+        return;
+      }
+
+      if (typeof node !== 'object') {
+        return;
+      }
+
+      if (looksLikeMessage(node)) {
+        pushMessage(node);
+      }
+
+      if (node.message) {
+        visit(node.message);
+      }
+
+      if (Array.isArray(node.messages)) {
+        visit(node.messages);
+      }
+
+      if (Array.isArray(node.items)) {
+        visit(node.items);
+      }
+
+      if (Array.isArray(node.data)) {
+        visit(node.data);
+      }
+
+      if (Array.isArray(node.conversations)) {
+        visit(node.conversations);
+      }
+
+      if (node.mapping && typeof node.mapping === 'object') {
+        visit(Object.values(node.mapping));
+      }
+    };
+
+    visit(raw);
+
+    return results;
   }
 
   validateMessages(raw) {
-    let msgs = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.messages)
-      ? raw.messages
-      : Array.isArray(raw?.items)
-      ? raw.items
-      : raw?.mapping
-      ? Object.values(raw.mapping)
-          .map(node => node?.message)
-          .filter(Boolean)
-      : [];
-
-    if (!Array.isArray(msgs)) msgs = [];
-
-    if (!msgs.length && Array.isArray(raw?.data)) {
-      msgs = raw.data.flatMap(item => {
-        if (Array.isArray(item?.messages)) return item.messages;
-        if (Array.isArray(item?.items)) return item.items;
-        if (item?.mapping) {
-          return Object.values(item.mapping)
-            .map(node => node?.message)
-            .filter(Boolean);
-        }
-        return [];
-      });
-    }
-
-    if (!msgs.length && Array.isArray(raw?.conversations)) {
-      msgs = raw.conversations.flatMap(conversation => {
-        if (Array.isArray(conversation?.messages)) return conversation.messages;
-        if (Array.isArray(conversation?.items)) return conversation.items;
-        if (conversation?.mapping) {
-          return Object.values(conversation.mapping)
-            .map(node => node?.message)
-            .filter(Boolean);
-        }
-        return [];
-      });
-    }
-
-    if (!msgs.length) {
-      throw new Error('无法在导出文件中找到消息数组。');
-    }
-
-    const parser = this.parser || new Parser();
-    const skippedIds = [];
-    const validMessages = [];
-
-    const resolveMessageId = message =>
-      message?.id ??
-      message?.message_id ??
-      message?.uuid ??
-      message?.key ??
-      message?.conversation_id ??
-      message?.metadata?.message_id ??
-      message?.message?.id ??
-      null;
-
-    messages.forEach(message => {
-      if (!message || typeof message !== 'object') {
-        skippedIds.push('unknown');
-        return;
-      }
-
-      const role =
-        message.role ??
-        message?.author?.role ??
-        message.author_role ??
-        (typeof message.author === 'string' ? message.author : null) ??
-        message.participant ??
-        message.sender ??
-        null;
-
-      const text = (parser.extractText(message) || '').trim();
-
-      if (role && text) {
-        validMessages.push(message);
-        return;
-      }
-
-      skippedIds.push(resolveMessageId(message) || 'unknown');
-    });
-
-    if (!validMessages.length) {
-      throw new Error('未找到可解析的消息文本内容。');
-    }
-
-    if (skippedIds.length && typeof console !== 'undefined' && typeof console.debug === 'function') {
-      console.debug('跳过缺少文本内容或角色信息的消息：', skippedIds);
-main
-    }
-
-    return validMessages;
+    return this.extractMessages(raw);
   }
 
   updateStatus(type, message) {

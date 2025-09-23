@@ -11,129 +11,142 @@ const ROLE_DEFAULT_NAMES = {
   tool: 'Tool'
 };
 
-function extractPartsText(parts) {
-  if (!Array.isArray(parts)) {
-    return typeof parts === 'string' ? parts : '';
+export function normalizeMessage(m) {
+  if (!m || typeof m !== 'object') {
+    return null;
   }
 
-  return parts
-    .map(part => {
-      if (typeof part === 'string') return part;
-      if (part && typeof part === 'object') {
-        if (typeof part.text === 'string') return part.text;
-        if (typeof part.content === 'string') return part.content;
-        if (typeof part.value === 'string') return part.value;
+  const roleValue =
+    m.role ??
+    m.author?.role ??
+    m.author_role ??
+    (typeof m.author === 'string' ? m.author : null) ??
+    m.message?.author?.role ??
+    m.participant ??
+    m.sender ??
+    null;
+  const role = typeof roleValue === 'string' ? roleValue.trim().toLowerCase() : '';
+
+  const pickText = value => {
+    if (value == null) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      for (const part of value) {
+        const extracted = pickText(part);
+        if (extracted) {
+          return extracted;
+        }
       }
       return '';
-    })
-    .filter(Boolean)
-    .join(' ');
-}
+    }
+    if (typeof value !== 'object') {
+      return '';
+    }
 
-function pickModel(message) {
-  const value =
-    message?.model ??
-    message?.metadata?.model ??
-    message?.meta?.model ??
-    message?.response_metadata?.model ??
-    message?.message?.metadata?.model ??
-    null;
+    if (typeof value.text === 'string') return value.text;
+    if (typeof value.value === 'string') return value.value;
+    if (typeof value.content === 'string') return value.content;
+    if (typeof value.message === 'string') return value.message;
+    if (typeof value.caption === 'string') return value.caption;
+    if (typeof value.data === 'string') return value.data;
+    if (typeof value.arguments === 'string') return value.arguments;
+    if (typeof value.body === 'string') return value.body;
+    if (typeof value.delta === 'string') return value.delta;
+    if (typeof value.text?.value === 'string') return value.text.value;
+    if (typeof value.content?.value === 'string') return value.content.value;
+    if (typeof value.message?.value === 'string') return value.message.value;
+    if (typeof value.text?.content === 'string') return value.text.content;
+    if (typeof value.message?.content === 'string') return value.message.content;
 
-  return value == null ? null : value;
-}
+    if (Array.isArray(value.parts)) {
+      const nested = pickText(value.parts);
+      if (nested) return nested;
+    }
 
-function pickTimestamp(message) {
-  const value =
-    message?.timestamp ??
-    message?.create_time ??
-    message?.createTime ??
-    message?.created_at ??
-    message?.created ??
-    message?.time ??
-    message?.date ??
-    message?.update_time ??
-    message?.message?.timestamp ??
-    message?.message?.create_time ??
-    null;
+    if (Array.isArray(value.content)) {
+      const nested = pickText(value.content);
+      if (nested) return nested;
+    }
 
-  return value == null ? null : value;
-}
+    if (Array.isArray(value.messages)) {
+      const nested = pickText(value.messages);
+      if (nested) return nested;
+    }
 
-export function normalizeMessage(msg) {
-  if (!msg || typeof msg !== 'object') {
-    return null;
-  }
+    if (Array.isArray(value.values)) {
+      const nested = pickText(value.values);
+      if (nested) return nested;
+    }
 
-  const role =
-    msg.role ??
-    msg.author?.role ??
-    msg.message?.author?.role ??
-    msg.participant ??
-    msg.sender ??
-    null;
+    if (value.delta && typeof value.delta === 'object') {
+      const nested = pickText(value.delta.content ?? value.delta.parts ?? value.delta.text ?? value.delta.value);
+      if (nested) return nested;
+    }
 
-  let text = extractPartsText(msg.content?.parts);
-
-  if (!text && typeof msg.content === 'string') {
-    text = msg.content;
-  }
-
-  if (!text && msg.content && typeof msg.content === 'object') {
-    text =
-      extractPartsText(msg.content.parts) ||
-      extractPartsText(msg.content.messages) ||
-      (typeof msg.content.text === 'string' ? msg.content.text : '') ||
-      (typeof msg.content.value === 'string' ? msg.content.value : '') ||
-      (typeof msg.content.content === 'string' ? msg.content.content : '');
-  }
-
-  if (!text && Array.isArray(msg.parts)) {
-    text = extractPartsText(msg.parts);
-  }
-
-  if (!text && msg.message) {
-    text =
-      extractPartsText(msg.message?.content?.parts) ||
-      (typeof msg.message?.content === 'string' ? msg.message.content : '') ||
-      (typeof msg.message?.text === 'string' ? msg.message.text : '');
-  }
-
-  if (typeof text !== 'string') {
-    text = String(text ?? '');
-  }
-
-  text = text.replace(/\s+/g, ' ').trim();
-
-  const normalizedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
-
-  if (!normalizedRole || (normalizedRole !== 'user' && normalizedRole !== 'assistant')) {
-    return null;
-  }
-
-  const visibleLength = text.replace(/\s+/g, '').length;
-  if (visibleLength < 2) {
-    return null;
-  }
-
-  const ts = pickTimestamp(msg);
-  const model = pickModel(msg);
-
-  return {
-    role: normalizedRole,
-    text,
-    ts,
-    model: model == null ? null : model,
-    raw: msg
+    return '';
   };
+
+  const contentCandidates = [
+    m.content?.parts,
+    m.content,
+    m.parts,
+    m.text,
+    m.value,
+    m.delta?.content,
+    m.delta,
+    m.message?.content?.parts,
+    m.message?.content,
+    m.message?.parts,
+    m.message?.text,
+    m.message?.value
+  ];
+
+  let text = '';
+  for (const candidate of contentCandidates) {
+    text = pickText(candidate);
+    if (text) {
+      break;
+    }
+  }
+
+  text = (text || '').replace(/\s+/g, ' ').trim();
+
+  if (!role || (role !== 'user' && role !== 'assistant')) {
+    return null;
+  }
+
+  if (text.length < 2) {
+    return null;
+  }
+
+  const ts =
+    m.create_time ??
+    m.createTime ??
+    m.timestamp ??
+    m.message?.create_time ??
+    m.message?.timestamp ??
+    null;
+  const model =
+    m.model ??
+    m.metadata?.model ??
+    m.message?.metadata?.model ??
+    null;
+
+  return { role, text, ts, model };
 }
 
 export function normaliseArray(arr) {
-  if (!Array.isArray(arr)) {
-    return [];
-  }
-
-  return arr.map(normalizeMessage).filter(Boolean);
+  return (arr || []).map(normalizeMessage).filter(Boolean);
 }
+
+export { normaliseArray as normalizeArray };
 
 export class Parser {
   constructor({ stopWords = [] } = {}) {
@@ -144,6 +157,10 @@ export class Parser {
   }
 
   static normaliseArray(arr) {
+    return normaliseArray(arr);
+  }
+
+  static normalizeArray(arr) {
     return normaliseArray(arr);
   }
 
@@ -166,14 +183,9 @@ export class Parser {
 
     this.currentOverrides = overrides || {};
 
-    const normalized = messages
-      .map(message => this.normalizeMessage(message))
-      .filter(
-        message =>
-          !!message && typeof message.text === 'string' && message.text.trim().length
-      );
+    const prepared = this.prepareMessages(messages);
 
-    if (!normalized.length) {
+    if (!prepared.length) {
       throw new Error('未找到可解析的消息文本内容。');
     }
 
