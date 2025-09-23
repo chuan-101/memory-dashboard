@@ -179,20 +179,35 @@ export class App {
   }
 
   extractMessages(raw) {
-    const results = [];
-    const seen = new WeakSet();
 
-    const looksLikeMessage = candidate => {
-      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
-        return false;
-      }
+    
+    let msgs = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.messages)
+      ? raw.messages
+      : Array.isArray(raw?.items)
+      ? raw.items
+      : raw?.mapping
+      ? Object.values(raw.mapping)
+          .map(node => node?.message)
+          .filter(Boolean)
+      : [];
 
-      const hasRole =
-        typeof candidate.role === 'string' ||
-        typeof candidate.author === 'string' ||
-        typeof candidate.sender === 'string' ||
-        typeof candidate.participant === 'string' ||
-        typeof candidate.author?.role === 'string';
+    if (!Array.isArray(msgs)) msgs = [];
+
+    if (!msgs.length && Array.isArray(raw?.data)) {
+      msgs = raw.data.flatMap(item => {
+        if (Array.isArray(item?.messages)) return item.messages;
+        if (Array.isArray(item?.items)) return item.items;
+        if (item?.mapping) {
+          return Object.values(item.mapping)
+            .map(node => node?.message)
+            .filter(Boolean);
+        }
+        return [];
+      });
+    }
+
 
       const hasContent =
         candidate.content !== undefined ||
@@ -200,70 +215,14 @@ export class App {
         candidate.text !== undefined ||
         candidate.delta !== undefined;
 
-      return hasRole || hasContent;
-    };
 
-    const pushMessage = message => {
-      if (!message || typeof message !== 'object' || Array.isArray(message)) {
-        return;
-      }
-      if (seen.has(message)) {
-        return;
-      }
-      if (!looksLikeMessage(message)) {
-        return;
-      }
-      seen.add(message);
-      results.push(message);
-    };
+    if (!Array.isArray(msgs)) {
+      return [];
+    }
 
-    const visit = node => {
-      if (!node) {
-        return;
-      }
-
-      if (Array.isArray(node)) {
-        node.forEach(visit);
-        return;
-      }
-
-      if (typeof node !== 'object') {
-        return;
-      }
-
-      if (looksLikeMessage(node)) {
-        pushMessage(node);
-      }
-
-      if (node.message) {
-        visit(node.message);
-      }
-
-      if (Array.isArray(node.messages)) {
-        visit(node.messages);
-      }
-
-      if (Array.isArray(node.items)) {
-        visit(node.items);
-      }
-
-      if (Array.isArray(node.data)) {
-        visit(node.data);
-      }
-
-      if (Array.isArray(node.conversations)) {
-        visit(node.conversations);
-      }
-
-      if (node.mapping && typeof node.mapping === 'object') {
-        visit(Object.values(node.mapping));
-      }
-    };
-
-    visit(raw);
-
-    return results;
+    return msgs;
   }
+
 
   validateMessages(raw) {
     return this.extractMessages(raw);
