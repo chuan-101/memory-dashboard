@@ -179,6 +179,7 @@ export class App {
   }
 
   extractMessages(raw) {
+
     
     let msgs = Array.isArray(raw)
       ? raw
@@ -206,6 +207,7 @@ export class App {
         return [];
       });
     }
+
 
       const hasContent =
         candidate.content !== undefined ||

@@ -127,6 +127,7 @@ export function normalizeMessage(m) {
     m.message?.metadata?.model ??
     null;
 
+
   return { role, text, ts, model };
 }
 
