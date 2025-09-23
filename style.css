@@ -30,6 +30,33 @@ body {
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), transparent);
 }
 
+.landing-banner {
+  flex-wrap: wrap;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.landing-content {
+  flex: 1 1 320px;
+}
+
+.landing-content h1 {
+  margin-bottom: 0.25rem;
+}
+
+.landing-tagline {
+  margin: 0;
+  max-width: 42rem;
+  font-size: 1rem;
+  opacity: 0.85;
+}
+
+.banner-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
 .page-header h1 {
   margin: 0;
   font-size: clamp(1.6rem, 3vw, 2.4rem);
@@ -76,6 +103,10 @@ main {
   margin-bottom: 1.5rem;
 }
 
+.control-section .control-group {
+  margin: 0;
+}
+
 .control-group {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
@@ -83,6 +114,27 @@ main {
   padding: clamp(1rem, 3vw, 1.5rem);
   display: grid;
   gap: 1rem;
+}
+
+.section-header {
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.section-header h2 {
+  margin: 0;
+}
+
+.section-description {
+  margin: 0;
+  opacity: 0.8;
+  font-size: 0.95rem;
+}
+
+.control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .control-group label {
@@ -124,6 +176,20 @@ button {
   transition: transform 0.2s ease, filter 0.2s ease;
 }
 
+.button-link,
+.ghost,
+.secondary {
+  background: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.ghost:hover,
+.secondary:hover {
+  filter: none;
+  background: rgba(148, 163, 184, 0.12);
+}
+
 button:hover {
   transform: translateY(-1px);
   filter: brightness(1.1);
@@ -131,6 +197,71 @@ button:hover {
 
 button:active {
   transform: translateY(0);
+}
+
+.dialog-header h2 {
+  margin: 0;
+}
+
+.dialog-header p {
+  margin: 0.35rem 0 0;
+  opacity: 0.8;
+}
+
+.name-dialog {
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 0;
+  background: var(--card-bg);
+  color: var(--text-color);
+  max-width: min(520px, 90vw);
+}
+
+.name-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.name-dialog .dialog-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.name-dialog .dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.toast-layer {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.status-section {
+  margin: 1rem 0 2rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.status--warning {
+  color: #fbbf24;
 }
 
 .status {
@@ -149,6 +280,10 @@ button:active {
 
 #dashboard[hidden] {
   display: none;
+}
+
+.dashboard-section + .dashboard-section {
+  margin-top: 2.5rem;
 }
 
 .kpi-grid {

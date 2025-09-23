@@ -2,111 +2,154 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>Memory：Me&GPT</title>
+  <title>Memory：Me&amp;GPT</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <header class="page-header">
-    <h1>Memory：Me&GPT</h1>
-    <div class="header-controls">
-      <label class="theme-selector">
-        <span>主题</span>
-        <select id="themeSelect">
+<body data-app-root>
+  <div id="toastLayer" class="toast-layer" role="status" aria-live="polite" aria-atomic="true" data-component="toast-layer"></div>
+
+  <header id="landingBanner" class="page-header landing-banner" data-component="landing-banner">
+    <div class="landing-content">
+      <h1 id="landingTitle">Memory：Me&amp;GPT</h1>
+      <p class="landing-tagline" id="landingTagline">回顾与 GPT 的记忆流，洞察互动节奏与关键词。</p>
+    </div>
+    <div class="banner-controls header-controls">
+      <label class="theme-selector" for="themeSelect">
+        <span class="theme-selector__label">界面主题</span>
+        <select id="themeSelect" name="theme" data-theme-select aria-describedby="themeHelp">
           <option value="echoes">Echoes</option>
           <option value="logic">Logic</option>
           <option value="emotion">Emotion</option>
         </select>
       </label>
+      <p id="themeHelp" class="visually-hidden">选择界面配色方案。</p>
     </div>
   </header>
-  <main>
-    <section class="controls">
-      <div class="control-group">
-        <label for="fileInput">导入对话 JSON</label>
-        <input type="file" id="fileInput" accept="application/json">
+
+  <main id="appMain" class="app-main" data-layout="dashboard">
+    <section id="uploadSection" class="controls control-section" aria-labelledby="uploadHeading" data-section="file-upload">
+      <div class="section-header control-group">
+        <h2 id="uploadHeading">导入对话数据</h2>
+        <p class="section-description">选择一份导出的 JSON 文件以生成交互记忆仪表盘。</p>
       </div>
-      <form id="nameOverrides" class="control-group">
-        <fieldset>
-          <legend>角色命名</legend>
+      <div class="control-group field-group" data-hook="file-picker">
+        <label for="fileInput">导入对话 JSON</label>
+        <input type="file" id="fileInput" name="conversation" accept="application/json" data-file-input>
+      </div>
+      <div class="control-group control-actions">
+        <button type="button" class="secondary" id="openNameDialog" data-action="open-name-dialog" aria-haspopup="dialog" aria-controls="nameOverrideDialog">配置角色命名与停用词</button>
+      </div>
+    </section>
+
+    <dialog id="nameOverrideDialog" class="name-dialog" aria-labelledby="nameDialogTitle" aria-describedby="nameDialogDesc" data-dialog="name-overrides" open>
+      <form id="nameOverrides" class="control-group" method="dialog" data-form="name-overrides">
+        <header class="dialog-header">
+          <h2 id="nameDialogTitle">角色命名与停用词</h2>
+          <p id="nameDialogDesc">为不同角色自定义显示名称并管理词云停用词。</p>
+        </header>
+        <div class="dialog-body">
           <div class="field-pair">
             <label for="userName">用户名称</label>
-            <input type="text" id="userName" name="user" placeholder="例如：Me">
+            <input type="text" id="userName" name="user" placeholder="例如：Me" autocomplete="off" data-input="user-name">
           </div>
           <div class="field-pair">
             <label for="assistantName">助手名称</label>
-            <input type="text" id="assistantName" name="assistant" placeholder="例如：GPT">
+            <input type="text" id="assistantName" name="assistant" placeholder="例如：GPT" autocomplete="off" data-input="assistant-name">
           </div>
           <div class="field-pair">
             <label for="stopWords">停用词（以逗号或换行分隔）</label>
-            <textarea id="stopWords" rows="2" placeholder="的,了,和,..."></textarea>
+            <textarea id="stopWords" name="stopwords" rows="2" placeholder="的,了,和,..." data-input="stop-words"></textarea>
           </div>
-          <button type="submit">保存偏好并刷新仪表盘</button>
-        </fieldset>
+        </div>
+        <footer class="dialog-footer">
+          <button type="reset" value="cancel" class="ghost" data-action="cancel-name-dialog">取消</button>
+          <button type="submit" value="submit" class="primary" data-action="submit-name-dialog">保存偏好并刷新仪表盘</button>
+        </footer>
       </form>
+    </dialog>
+
+    <section id="statusSection" class="status-section" aria-live="polite" aria-atomic="true">
+      <div id="status" class="status" role="alert" data-status-target></div>
+      <div id="insufficientDataBanner" class="status status--warning" role="alert" hidden data-banner="insufficient-data">
+        数据量不足：请导入至少四条消息以生成完整的可视化。
+      </div>
     </section>
 
-    <section id="status" class="status" role="alert" aria-live="polite"></section>
+    <section id="dashboard" class="dashboard" hidden data-dashboard-root>
+      <section id="kpiSection" class="dashboard-section" aria-labelledby="kpiHeading" data-section="kpis">
+        <div class="section-header">
+          <h2 id="kpiHeading">核心指标</h2>
+        </div>
+        <div class="kpi-grid" data-kpi-grid>
+          <article class="kpi-card" id="kpi-earliest" data-kpi-card="earliest">
+            <h3>最早消息</h3>
+            <p class="kpi-value">--</p>
+            <p class="kpi-detail">--</p>
+          </article>
+          <article class="kpi-card" id="kpi-streak" data-kpi-card="streak">
+            <h3>连续活跃天数</h3>
+            <p class="kpi-value">--</p>
+            <p class="kpi-detail">--</p>
+          </article>
+          <article class="kpi-card" id="kpi-peak-hour" data-kpi-card="peak-hour">
+            <h3>高峰时段</h3>
+            <p class="kpi-value">--</p>
+            <p class="kpi-detail">--</p>
+          </article>
+        </div>
+      </section>
 
-    <section id="dashboard" hidden>
-      <div class="kpi-grid">
-        <article class="kpi-card" id="kpi-earliest">
-          <h3>最早消息</h3>
-          <p class="kpi-value">--</p>
-          <p class="kpi-detail">--</p>
-        </article>
-        <article class="kpi-card" id="kpi-streak">
-          <h3>连续活跃天数</h3>
-          <p class="kpi-value">--</p>
-          <p class="kpi-detail">--</p>
-        </article>
-        <article class="kpi-card" id="kpi-peak-hour">
-          <h3>高峰时段</h3>
-          <p class="kpi-value">--</p>
-          <p class="kpi-detail">--</p>
-        </article>
-      </div>
+      <section id="chartsSection" class="dashboard-section" aria-labelledby="chartsHeading" data-section="charts">
+        <div class="section-header">
+          <h2 id="chartsHeading">互动图表</h2>
+        </div>
+        <div class="charts-grid" data-chart-grid>
+          <div class="chart-card" id="chart-card-f1" data-chart-card="f1">
+            <header><h3>F1 · 月度消息量</h3></header>
+            <canvas id="chartF1" data-chart="f1" aria-label="月度消息量柱状图" role="img"></canvas>
+          </div>
+          <div class="chart-card" id="chart-card-f2" data-chart-card="f2">
+            <header><h3>F2 · 小时分布</h3></header>
+            <canvas id="chartF2" data-chart="f2" aria-label="小时消息分布柱状图" role="img"></canvas>
+          </div>
+          <div class="chart-card" id="chart-card-f3" data-chart-card="f3">
+            <header><h3>F3 · 角色消息数</h3></header>
+            <canvas id="chartF3" data-chart="f3" aria-label="不同角色的消息数" role="img"></canvas>
+          </div>
+          <div class="chart-card" id="chart-card-f4" data-chart-card="f4">
+            <header><h3>F4 · 角色字数</h3></header>
+            <canvas id="chartF4" data-chart="f4" aria-label="不同角色的字数" role="img"></canvas>
+          </div>
+          <div class="chart-card" id="chart-card-f5" data-chart-card="f5">
+            <header><h3>F5 · 模型使用占比</h3></header>
+            <canvas id="chartF5" data-chart="f5" aria-label="模型调用占比" role="img"></canvas>
+          </div>
+          <div class="chart-card" id="chart-card-f6" data-chart-card="f6">
+            <header><h3>F6 · 每日互动趋势</h3></header>
+            <canvas id="chartF6" data-chart="f6" aria-label="每日互动趋势折线图" role="img"></canvas>
+          </div>
+          <div class="chart-card" id="chart-card-f7" data-chart-card="f7">
+            <header><h3>F7 · 周内活跃度</h3></header>
+            <canvas id="chartF7" data-chart="f7" aria-label="周内活跃度雷达图" role="img"></canvas>
+          </div>
+        </div>
+      </section>
 
-      <div class="charts-grid">
-        <div class="chart-card" id="chart-card-f1">
-          <header><h3>F1 · 月度消息量</h3></header>
-          <canvas id="chartF1"></canvas>
+      <section id="wordCloudSection" class="dashboard-section" aria-labelledby="wordCloudHeading" data-section="wordcloud">
+        <div class="section-header">
+          <h2 id="wordCloudHeading">关键词云</h2>
         </div>
-        <div class="chart-card" id="chart-card-f2">
-          <header><h3>F2 · 小时分布</h3></header>
-          <canvas id="chartF2"></canvas>
+        <div class="wordcloud-card" data-wordcloud-card>
+          <header><h3>F8 · 关键词云</h3></header>
+          <div id="wordCloud" data-wordcloud="f8" role="img" aria-label="关键词云可视化画布"></div>
         </div>
-        <div class="chart-card" id="chart-card-f3">
-          <header><h3>F3 · 角色消息数</h3></header>
-          <canvas id="chartF3"></canvas>
-        </div>
-        <div class="chart-card" id="chart-card-f4">
-          <header><h3>F4 · 角色字数</h3></header>
-          <canvas id="chartF4"></canvas>
-        </div>
-        <div class="chart-card" id="chart-card-f5">
-          <header><h3>F5 · 模型使用占比</h3></header>
-          <canvas id="chartF5"></canvas>
-        </div>
-        <div class="chart-card" id="chart-card-f6">
-          <header><h3>F6 · 每日互动趋势</h3></header>
-          <canvas id="chartF6"></canvas>
-        </div>
-        <div class="chart-card" id="chart-card-f7">
-          <header><h3>F7 · 周内活跃度</h3></header>
-          <canvas id="chartF7"></canvas>
-        </div>
-      </div>
-
-      <div class="wordcloud-card">
-        <header><h3>F8 · 关键词云</h3></header>
-        <div id="wordCloud"></div>
-      </div>
+      </section>
     </section>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/wordcloud2.js@1.2.2/src/wordcloud2.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jieba-zh-cn@2.1.6/dist/jieba.min.js"></script>
-  <script type="module" src="./main.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/wordcloud2.js@1.2.2/src/wordcloud2.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/jieba-zh-cn@2.1.6/dist/jieba.min.js" defer></script>
+  <script type="module" src="./main.js" defer></script>
 </body>
 </html>
