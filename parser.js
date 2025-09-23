@@ -27,86 +27,72 @@ export function normalizeMessage(m) {
     null;
   const role = typeof roleValue === 'string' ? roleValue.trim().toLowerCase() : '';
 
-  const pickText = value => {
-    if (value == null) {
-      return '';
-    }
-    if (typeof value === 'string') {
-      return value;
-    }
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
-    }
-    if (Array.isArray(value)) {
-      for (const part of value) {
-        const extracted = pickText(part);
-        if (extracted) {
-          return extracted;
-        }
+  let text = null;
+  const firstPart = Array.isArray(m.content?.parts) ? m.content.parts[0] : m.content?.parts;
+  if (typeof firstPart === 'string') {
+    text = firstPart;
+  } else if (firstPart && typeof firstPart === 'object') {
+    text = firstPart.text ?? firstPart.content ?? firstPart.value ?? null;
+  }
+
+  if (text == null) {
+    const directContent = m.content ?? m.message?.content ?? null;
+    if (typeof directContent === 'string') {
+      text = directContent;
+    } else if (Array.isArray(directContent)) {
+      const first = directContent[0];
+      if (typeof first === 'string') {
+        text = first;
+      } else if (first && typeof first === 'object') {
+        text = first.text ?? first.content ?? first.value ?? null;
       }
-      return '';
+    } else if (directContent && typeof directContent === 'object') {
+      const parts = Array.isArray(directContent.parts) ? directContent.parts[0] : null;
+      if (typeof parts === 'string') {
+        text = parts;
+      } else if (parts && typeof parts === 'object') {
+        text = parts.text ?? parts.content ?? parts.value ?? null;
+      } else if (typeof directContent.text === 'string') {
+        text = directContent.text;
+      } else if (typeof directContent.content === 'string') {
+        text = directContent.content;
+      } else if (typeof directContent.value === 'string') {
+        text = directContent.value;
+      }
     }
-    if (typeof value !== 'object') {
-      return '';
+  }
+
+  if (text == null && Array.isArray(m.parts)) {
+    const first = m.parts[0];
+    if (typeof first === 'string') {
+      text = first;
+    } else if (first && typeof first === 'object') {
+      text = first.text ?? first.content ?? first.value ?? null;
     }
+  }
 
-    if (typeof value.text === 'string') return value.text;
-    if (typeof value.value === 'string') return value.value;
-    if (typeof value.content === 'string') return value.content;
-    if (typeof value.message === 'string') return value.message;
-    if (typeof value.caption === 'string') return value.caption;
-    if (typeof value.data === 'string') return value.data;
-    if (typeof value.arguments === 'string') return value.arguments;
-    if (typeof value.body === 'string') return value.body;
-    if (typeof value.delta === 'string') return value.delta;
-    if (typeof value.text?.value === 'string') return value.text.value;
-    if (typeof value.content?.value === 'string') return value.content.value;
-    if (typeof value.message?.value === 'string') return value.message.value;
-    if (typeof value.text?.content === 'string') return value.text.content;
-    if (typeof value.message?.content === 'string') return value.message.content;
-
-    if (Array.isArray(value.parts)) {
-      const nested = pickText(value.parts);
-      if (nested) return nested;
+  if (typeof m.message === 'object' && text == null) {
+    const messageContent = m.message?.content;
+    if (typeof messageContent === 'string') {
+      text = messageContent;
+    } else if (Array.isArray(messageContent?.parts)) {
+      const first = messageContent.parts[0];
+      if (typeof first === 'string') {
+        text = first;
+      } else if (first && typeof first === 'object') {
+        text = first.text ?? first.content ?? first.value ?? null;
+      }
+    } else if (messageContent && typeof messageContent === 'object') {
+      text = messageContent.text ?? messageContent.content ?? messageContent.value ?? text;
+    } else if (typeof m.message?.text === 'string') {
+      text = m.message.text;
     }
+  }
 
-    if (Array.isArray(value.content)) {
-      const nested = pickText(value.content);
-      if (nested) return nested;
-    }
+  if (text == null) {
+    text = '';
+  }
 
-    if (Array.isArray(value.messages)) {
-      const nested = pickText(value.messages);
-      if (nested) return nested;
-    }
-
-    if (Array.isArray(value.values)) {
-      const nested = pickText(value.values);
-      if (nested) return nested;
-    }
-
-    if (value.delta && typeof value.delta === 'object') {
-      const nested = pickText(value.delta.content ?? value.delta.parts ?? value.delta.text ?? value.delta.value);
-      if (nested) return nested;
-    }
-
-    return '';
-  };
-
-  const contentCandidates = [
-    m.content?.parts,
-    m.content,
-    m.parts,
-    m.text,
-    m.value,
-    m.delta?.content,
-    m.delta,
-    m.message?.content?.parts,
-    m.message?.content,
-    m.message?.parts,
-    m.message?.text,
-    m.message?.value
-  ];
 
   let text = '';
   for (const candidate of contentCandidates) {
@@ -116,7 +102,9 @@ export function normalizeMessage(m) {
     }
   }
 
-  text = (text || '').replace(/\s+/g, ' ').trim();
+
+  text = text.replace(/\s+/g, ' ').trim();
+
 
   if (!role || (role !== 'user' && role !== 'assistant')) {
     return null;
