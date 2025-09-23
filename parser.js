@@ -46,7 +46,7 @@ export class Parser {
       );
 
     if (!normalized.length) {
-      throw new Error('未找到有效的消息文本内容。');
+      throw new Error('未找到可解析的消息文本内容。');
     }
 
     const roleMessages = {
@@ -391,6 +391,7 @@ export class Parser {
     }
 
     const { role: baseRole, text } = coreFields;
+ main
     const role = this.getRole({ ...raw, role: baseRole });
     const timestamp = this.extractTimestamp(raw);
     const model = this.extractModel(raw);
@@ -479,6 +480,7 @@ export class Parser {
     }
 
     return { role: normalizedRole, text };
+ main
   }
 
   getRole(message) {

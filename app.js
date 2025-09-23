@@ -283,6 +283,7 @@ export class App {
 
     if (skippedIds.length && typeof console !== 'undefined' && typeof console.debug === 'function') {
       console.debug('跳过缺少文本内容或角色信息的消息：', skippedIds);
+main
     }
 
     return validMessages;
