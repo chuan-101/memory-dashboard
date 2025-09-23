@@ -1,1 +1,9 @@
-/* Memory Dashboard – Echoes theme stub */  
+:root{
+  --c-primary-dark:#132c54;
+  --c-primary:#517bb0;
+  --c-secondary:#ceb5d3;
+  --c-accent:#536a8c;
+  --c-bg:#7ea1bf;
+}
+body{margin:0;font-family:sans-serif;background:var(--c-bg);color:var(--c-primary-dark);}
+h1{padding:16px 24px;}
