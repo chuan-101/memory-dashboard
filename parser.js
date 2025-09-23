@@ -11,6 +11,109 @@ const ROLE_DEFAULT_NAMES = {
   tool: 'Tool'
 };
 
+const IGNORED_TEXT_KEYS = new Set([
+  'author',
+  'metadata',
+  'create_time',
+  'createTime',
+  'timestamp',
+  'model',
+  'models',
+  'role',
+  'finish_reason',
+  'finishReason',
+  'id'
+]);
+
+function pickText(candidate, visited = new Set()) {
+  if (candidate == null) {
+    return null;
+  }
+
+  if (typeof candidate === 'string') {
+    return candidate;
+  }
+
+  if (visited.has(candidate)) {
+    return null;
+  }
+
+  if (Array.isArray(candidate)) {
+    visited.add(candidate);
+    for (const item of candidate) {
+      const text = pickText(item, visited);
+      if (text) {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  if (typeof candidate !== 'object') {
+    return null;
+  }
+
+  visited.add(candidate);
+
+  const directKeys = ['text', 'content', 'value', 'body', 'message'];
+  for (const key of directKeys) {
+    const value = candidate[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+
+  const nestedKeys = [
+    'text',
+    'content',
+    'value',
+    'body',
+    'message',
+    'parts',
+    'messages',
+    'choices',
+    'delta',
+    'data',
+    'response',
+    'responses',
+    'result',
+    'results',
+    'output',
+    'outputs',
+    'arguments',
+    'arguments_json',
+    'values',
+    'segments',
+    'alternatives',
+    'items',
+    'payload',
+    'detail',
+    'details'
+  ];
+
+  for (const key of nestedKeys) {
+    if (!(key in candidate) || IGNORED_TEXT_KEYS.has(key)) {
+      continue;
+    }
+    const text = pickText(candidate[key], visited);
+    if (text) {
+      return text;
+    }
+  }
+
+  for (const [key, value] of Object.entries(candidate)) {
+    if (nestedKeys.includes(key) || IGNORED_TEXT_KEYS.has(key)) {
+      continue;
+    }
+    const text = pickText(value, visited);
+    if (text) {
+      return text;
+    }
+  }
+
+  return null;
+}
+
 export function normalizeMessage(m) {
   if (!m || typeof m !== 'object') {
     return null;
@@ -27,84 +130,54 @@ export function normalizeMessage(m) {
     null;
   const role = typeof roleValue === 'string' ? roleValue.trim().toLowerCase() : '';
 
+  const contentCandidates = [
+    m.text,
+    m.content,
+    m.message?.text,
+    m.message?.content,
+    m.message?.body,
+    m.body,
+    m.parts,
+    m.message?.parts,
+    m.content?.parts,
+    m.message?.content?.parts,
+    m.delta?.content,
+    m.delta?.message,
+    m.data?.content,
+    m.data?.text,
+    m.data?.messages,
+    m.response,
+    m.responses,
+    m.output,
+    m.outputs,
+    m.result,
+    m.results,
+    m.detail,
+    m.details,
+    m.arguments,
+    m.arguments_json,
+    m.additional_kwargs,
+    m.completion,
+    m.completion?.content,
+    m.completion?.response,
+    m.completion?.output,
+    m.choices
+  ].filter(candidate => candidate !== undefined && candidate !== null);
+
   let text = null;
-  const firstPart = Array.isArray(m.content?.parts) ? m.content.parts[0] : m.content?.parts;
-  if (typeof firstPart === 'string') {
-    text = firstPart;
-  } else if (firstPart && typeof firstPart === 'object') {
-    text = firstPart.text ?? firstPart.content ?? firstPart.value ?? null;
-  }
-
-  if (text == null) {
-    const directContent = m.content ?? m.message?.content ?? null;
-    if (typeof directContent === 'string') {
-      text = directContent;
-    } else if (Array.isArray(directContent)) {
-      const first = directContent[0];
-      if (typeof first === 'string') {
-        text = first;
-      } else if (first && typeof first === 'object') {
-        text = first.text ?? first.content ?? first.value ?? null;
-      }
-    } else if (directContent && typeof directContent === 'object') {
-      const parts = Array.isArray(directContent.parts) ? directContent.parts[0] : null;
-      if (typeof parts === 'string') {
-        text = parts;
-      } else if (parts && typeof parts === 'object') {
-        text = parts.text ?? parts.content ?? parts.value ?? null;
-      } else if (typeof directContent.text === 'string') {
-        text = directContent.text;
-      } else if (typeof directContent.content === 'string') {
-        text = directContent.content;
-      } else if (typeof directContent.value === 'string') {
-        text = directContent.value;
-      }
-    }
-  }
-
-  if (text == null && Array.isArray(m.parts)) {
-    const first = m.parts[0];
-    if (typeof first === 'string') {
-      text = first;
-    } else if (first && typeof first === 'object') {
-      text = first.text ?? first.content ?? first.value ?? null;
-    }
-  }
-
-  if (typeof m.message === 'object' && text == null) {
-    const messageContent = m.message?.content;
-    if (typeof messageContent === 'string') {
-      text = messageContent;
-    } else if (Array.isArray(messageContent?.parts)) {
-      const first = messageContent.parts[0];
-      if (typeof first === 'string') {
-        text = first;
-      } else if (first && typeof first === 'object') {
-        text = first.text ?? first.content ?? first.value ?? null;
-      }
-    } else if (messageContent && typeof messageContent === 'object') {
-      text = messageContent.text ?? messageContent.content ?? messageContent.value ?? text;
-    } else if (typeof m.message?.text === 'string') {
-      text = m.message.text;
-    }
-  }
-
-  if (text == null) {
-    text = '';
-  }
-
-
-  let text = '';
   for (const candidate of contentCandidates) {
-    text = pickText(candidate);
-    if (text) {
+    const candidateText = pickText(candidate);
+    if (typeof candidateText === 'string' && candidateText.trim()) {
+      text = candidateText;
       break;
     }
   }
 
+  if (typeof text !== 'string') {
+    return null;
+  }
 
   text = text.replace(/\s+/g, ' ').trim();
-
 
   if (!role || (role !== 'user' && role !== 'assistant')) {
     return null;

@@ -51,11 +51,18 @@ export class App {
     }
 
     try {
-      const text = await file.text();
-      const raw = JSON.parse(text);
+      const raw = JSON.parse(await file.text());
       const candidates = this.extractMessages(raw);
-      const normaliser = Parser.normaliseArray ?? Parser.normalizeArray;
-      const cleaned = typeof normaliser === 'function' ? normaliser(candidates) : [];
+
+      const sample = candidates.slice(0, 5).map(message => ({
+        role: message?.author?.role ?? message?.role,
+        contentType: typeof message?.content,
+        hasParts: Array.isArray(message?.content?.parts),
+      }));
+      console.log('[extract sample]', sample, 'total:', candidates.length);
+
+      const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
+      const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
 
       if (!cleaned.length) {
         throw new Error('未找到可用于统计的 user/assistant 文本；请检查导出格式。');
@@ -179,48 +186,75 @@ export class App {
   }
 
   extractMessages(raw) {
+    const out = [];
+    const seen = new Set();
 
-    
-    let msgs = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.messages)
-      ? raw.messages
-      : Array.isArray(raw?.items)
-      ? raw.items
-      : raw?.mapping
-      ? Object.values(raw.mapping)
-          .map(node => node?.message)
-          .filter(Boolean)
-      : [];
+    const pushIfMessage = node => {
+      if (!node) {
+        return;
+      }
+      const msg = node?.message ?? node;
+      if (!msg || typeof msg !== 'object') {
+        return;
+      }
+      const role = msg?.author?.role ?? msg?.role;
+      const hasRole = typeof role === 'string';
+      const hasContent = msg?.content !== undefined;
+      if (!hasRole && !hasContent) {
+        return;
+      }
+      if (seen.has(msg)) {
+        return;
+      }
+      seen.add(msg);
+      out.push(msg);
+    };
 
-    if (!Array.isArray(msgs)) msgs = [];
-
-    if (!msgs.length && Array.isArray(raw?.data)) {
-      msgs = raw.data.flatMap(item => {
-        if (Array.isArray(item?.messages)) return item.messages;
-        if (Array.isArray(item?.items)) return item.items;
-        if (item?.mapping) {
-          return Object.values(item.mapping)
-            .map(node => node?.message)
-            .filter(Boolean);
+    const visited = new Set();
+    const walk = value => {
+      if (!value) {
+        return;
+      }
+      if (Array.isArray(value)) {
+        if (visited.has(value)) {
+          return;
         }
-        return [];
-      });
-    }
+        visited.add(value);
+        value.forEach(walk);
+        return;
+      }
+      if (typeof value !== 'object') {
+        return;
+      }
+      if (visited.has(value)) {
+        return;
+      }
+      visited.add(value);
 
+      if (Array.isArray(value.messages)) {
+        walk(value.messages);
+      }
+      if (Array.isArray(value.items)) {
+        walk(value.items);
+      }
+      if (Array.isArray(value.conversations)) {
+        walk(value.conversations);
+      }
+      if (value.mapping && typeof value.mapping === 'object') {
+        Object.values(value.mapping).forEach(node => {
+          if (node) {
+            pushIfMessage(node);
+          }
+        });
+      }
 
-      const hasContent =
-        candidate.content !== undefined ||
-        candidate.parts !== undefined ||
-        candidate.text !== undefined ||
-        candidate.delta !== undefined;
+      pushIfMessage(value);
 
+      Object.values(value).forEach(walk);
+    };
 
-    if (!Array.isArray(msgs)) {
-      return [];
-    }
-
-    return msgs;
+    walk(raw);
+    return out;
   }
 
 
