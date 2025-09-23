@@ -39,8 +39,8 @@ export class App {
     }
   }
 
-  async handleFileSelection(event) {
-    const file = event.target.files?.[0];
+  async handleFileSelection(evt) {
+    const file = evt.target.files?.[0];
     if (!file) {
       return;
     }
@@ -51,15 +51,10 @@ export class App {
     }
 
     try {
-      const raw = JSON.parse(await file.text());
-      const candidates = this.extractMessages(raw);
+      const text = await file.text();
+      const raw = JSON.parse(text);
 
-      const sample = candidates.slice(0, 5).map(message => ({
-        role: message?.author?.role ?? message?.role,
-        contentType: typeof message?.content,
-        hasParts: Array.isArray(message?.content?.parts),
-      }));
-      console.log('[extract sample]', sample, 'total:', candidates.length);
+      const candidates = this.extractMessages(raw);
 
       const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
       const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
@@ -186,75 +181,23 @@ export class App {
   }
 
   extractMessages(raw) {
-    const out = [];
-    const seen = new Set();
+    let arr = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.messages)
+      ? raw.messages
+      : Array.isArray(raw?.items)
+      ? raw.items
+      : raw?.mapping
+      ? Object.values(raw.mapping)
+          .map(node => node?.message)
+          .filter(Boolean)
+      : [];
 
-    const pushIfMessage = node => {
-      if (!node) {
-        return;
-      }
-      const msg = node?.message ?? node;
-      if (!msg || typeof msg !== 'object') {
-        return;
-      }
-      const role = msg?.author?.role ?? msg?.role;
-      const hasRole = typeof role === 'string';
-      const hasContent = msg?.content !== undefined;
-      if (!hasRole && !hasContent) {
-        return;
-      }
-      if (seen.has(msg)) {
-        return;
-      }
-      seen.add(msg);
-      out.push(msg);
-    };
+    if ((!Array.isArray(arr) || !arr.length) && Array.isArray(raw?.data)) {
+      arr = raw.data.flatMap(entry => this.extractMessages(entry));
+    }
 
-    const visited = new Set();
-    const walk = value => {
-      if (!value) {
-        return;
-      }
-      if (Array.isArray(value)) {
-        if (visited.has(value)) {
-          return;
-        }
-        visited.add(value);
-        value.forEach(walk);
-        return;
-      }
-      if (typeof value !== 'object') {
-        return;
-      }
-      if (visited.has(value)) {
-        return;
-      }
-      visited.add(value);
-
-      if (Array.isArray(value.messages)) {
-        walk(value.messages);
-      }
-      if (Array.isArray(value.items)) {
-        walk(value.items);
-      }
-      if (Array.isArray(value.conversations)) {
-        walk(value.conversations);
-      }
-      if (value.mapping && typeof value.mapping === 'object') {
-        Object.values(value.mapping).forEach(node => {
-          if (node) {
-            pushIfMessage(node);
-          }
-        });
-      }
-
-      pushIfMessage(value);
-
-      Object.values(value).forEach(walk);
-    };
-
-    walk(raw);
-    return out;
+    return Array.isArray(arr) ? arr : [];
   }
 
 
