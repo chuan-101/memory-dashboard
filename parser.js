@@ -166,9 +166,14 @@ export class Parser {
 
     this.currentOverrides = overrides || {};
 
-    const prepared = this.prepareMessages(messages);
+    const normalized = messages
+      .map(message => this.normalizeMessage(message))
+      .filter(
+        message =>
+          !!message && typeof message.text === 'string' && message.text.trim().length
+      );
 
-    if (!prepared.length) {
+    if (!normalized.length) {
       throw new Error('未找到可解析的消息文本内容。');
     }
 
@@ -567,6 +572,187 @@ export class Parser {
 
     this.jiebaReady = typeof window.jieba.cut === 'function';
     return this.jiebaReady;
+  }
+
+  normalizeMessage(raw) {
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+
+    const coreFields = this.normalizeCoreFields(raw);
+    if (!coreFields) {
+      return null;
+    }
+
+    const { role: baseRole, text } = coreFields;
+ main
+    const role = this.getRole({ ...raw, role: baseRole });
+    const timestamp = this.extractTimestamp(raw);
+    const model = this.extractModel(raw);
+    const wordCount = this.countWords(text);
+    const dayKey = timestamp ? this.formatDate(timestamp) : null;
+    const formattedTime = timestamp
+      ? this.formatDate(timestamp, { includeTime: true })
+      : null;
+
+    return {
+      id: raw.id || raw.message_id || raw.uuid || `${role}-${timestamp || Date.now()}`,
+      role,
+      displayRole: this.getDisplayName(role),
+      text,
+      timestamp,
+      model,
+      wordCount,
+      dayKey,
+      formattedTime,
+      raw
+    };
+  }
+
+  normalizeCoreFields(msg) {
+    const role =
+      msg?.role ??
+      msg?.author?.role ??
+      msg?.author_role ??
+      (typeof msg?.author === 'string' ? msg.author : null) ??
+      msg?.participant ??
+      msg?.sender ??
+      'unknown';
+
+    let text = '';
+
+    if (Array.isArray(msg?.content?.parts)) {
+      text = msg.content.parts
+        .map(part => {
+          if (typeof part === 'string') return part;
+          if (typeof part?.text === 'string') return part.text;
+          if (typeof part?.content === 'string') return part.content;
+          if (typeof part?.value === 'string') return part.value;
+          return '';
+        })
+        .join(' ')
+        .trim();
+    } else if (typeof msg?.content?.parts === 'string') {
+      text = msg.content.parts;
+    }
+
+    if (!text && typeof msg?.content === 'string') {
+      text = msg.content;
+    }
+
+    if (!text && typeof msg?.content?.text === 'string') {
+      text = msg.content.text;
+    }
+
+    if (!text && typeof msg?.content?.value === 'string') {
+      text = msg.content.value;
+    }
+
+    if (!text && typeof msg?.content?.content === 'string') {
+      text = msg.content.content;
+    }
+
+    if (!text) {
+      text = this.extractText(msg);
+    }
+
+    const normalizedRole = (role ?? '').toString().trim();
+    if (!normalizedRole) {
+      throw new Error('消息结构不完整，无法解析 role 或 content。');
+    }
+
+    if (typeof text === 'string') {
+      text = text.trim();
+    } else if (text == null) {
+      text = '';
+    } else {
+      text = `${text}`.trim();
+    }
+
+    if (!text) {
+      return { role: normalizedRole, text: '' };
+    }
+
+    return { role: normalizedRole, text };
+ main
+  }
+
+  getRole(message) {
+    const role =
+      message.role ||
+      message?.author?.role ||
+      message.author_role ||
+      (typeof message.author === 'string' ? message.author : null) ||
+      message.participant ||
+      message.sender ||
+      'unknown';
+
+    return (role || 'unknown').toString().toLowerCase();
+  }
+
+  extractText(message) {
+    if (Array.isArray(message?.content?.parts)) {
+      const combined = message.content.parts
+        .map(part => {
+          if (typeof part === 'string') return part;
+          if (typeof part?.text === 'string') return part.text;
+          if (typeof part?.content === 'string') return part.content;
+          if (typeof part?.value === 'string') return part.value;
+          return '';
+        })
+        .join(' ')
+        .trim();
+
+      if (combined) {
+        return combined;
+      }
+    }
+
+    if (typeof message?.content?.parts === 'string') {
+      return message.content.parts;
+    }
+
+    if (typeof message?.content?.text === 'string') {
+      return message.content.text;
+    }
+
+    if (typeof message?.content?.value === 'string') {
+      return message.content.value;
+    }
+
+    if (typeof message?.content?.content === 'string') {
+      return message.content.content;
+    }
+
+    if (typeof message.content === 'string') {
+      return message.content;
+    }
+
+    if (Array.isArray(message.content)) {
+      return message.content
+        .map(part => {
+          if (typeof part === 'string') return part;
+          if (part?.text) return part.text;
+          if (part?.content) return part.content;
+          if (part?.value) return part.value;
+          return '';
+        })
+        .join(' ');
+    }
+
+    if (message?.message?.content) {
+      return this.extractText(message.message);
+    }
+
+    if (message?.body) {
+      return this.extractText({ content: message.body });
+    }
+
+    if (message?.text) {
+      return message.text;
+    }
+
+    return '';
   }
 
   extractTimestamp(message) {
