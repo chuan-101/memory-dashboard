@@ -52,13 +52,17 @@ export class App {
 
     try {
       const text = await this.readFile(file);
-      const parsed = this.parseJson(text);
-      const messages = this.extractMessages(parsed);
-      this.validateMessages(messages);
+      const raw = this.parseJson(text);
+      const candidates = this.validateMessages(raw);
+      const cleaned = Parser.normaliseArray(candidates);
 
-      this.activeMessages = messages;
+      if (!cleaned.length) {
+        throw new Error('未找到可用于统计的 user/assistant 文本；请检查导出格式。');
+      }
+
+      this.activeMessages = cleaned;
       await this.refreshDashboard();
-      this.updateStatus('success', `成功导入 ${messages.length} 条消息。`);
+      this.updateStatus('success', `成功导入 ${cleaned.length} 条消息。`);
     } catch (error) {
       console.error(error);
       this.updateStatus('error', error.message || '解析文件失败。');
@@ -184,70 +188,52 @@ export class App {
     }
   }
 
-  extractMessages(data) {
-    if (!data) {
-      throw new Error('JSON 中未找到消息数据。');
-    }
+  validateMessages(raw) {
+    let msgs = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.messages)
+      ? raw.messages
+      : Array.isArray(raw?.items)
+      ? raw.items
+      : raw?.mapping
+      ? Object.values(raw.mapping)
+          .map(node => node?.message)
+          .filter(Boolean)
+      : [];
 
-    if (Array.isArray(data)) {
-      if (data.length && data[0]?.messages && Array.isArray(data[0].messages)) {
-        return data.flatMap(item => item.messages);
-      }
-      return data;
-    }
+    if (!Array.isArray(msgs)) msgs = [];
 
-    if (Array.isArray(data.messages)) {
-      return data.messages;
-    }
-
-    if (Array.isArray(data.items)) {
-      return data.items;
-    }
-
-    if (Array.isArray(data.conversations)) {
-      const nested = data.conversations.flatMap(conversation => {
-        if (Array.isArray(conversation.messages)) {
-          return conversation.messages;
-        }
-        if (Array.isArray(conversation.items)) {
-          return conversation.items;
+    if (!msgs.length && Array.isArray(raw?.data)) {
+      msgs = raw.data.flatMap(item => {
+        if (Array.isArray(item?.messages)) return item.messages;
+        if (Array.isArray(item?.items)) return item.items;
+        if (item?.mapping) {
+          return Object.values(item.mapping)
+            .map(node => node?.message)
+            .filter(Boolean);
         }
         return [];
       });
-      if (nested.length) {
-        return nested;
-      }
     }
 
-    if (Array.isArray(data.data)) {
-      const nested = data.data.flatMap(item => {
-        if (Array.isArray(item.messages)) return item.messages;
-        if (Array.isArray(item.items)) return item.items;
+    if (!msgs.length && Array.isArray(raw?.conversations)) {
+      msgs = raw.conversations.flatMap(conversation => {
+        if (Array.isArray(conversation?.messages)) return conversation.messages;
+        if (Array.isArray(conversation?.items)) return conversation.items;
+        if (conversation?.mapping) {
+          return Object.values(conversation.mapping)
+            .map(node => node?.message)
+            .filter(Boolean);
+        }
         return [];
       });
-      if (nested.length) {
-        return nested;
-      }
     }
 
-    throw new Error('无法在 JSON 中定位消息列表。');
-  }
-
-  validateMessages(messages) {
-    if (!Array.isArray(messages) || !messages.length) {
-      throw new Error('消息数组为空。');
+    if (!msgs.length) {
+      throw new Error('无法在导出文件中找到消息数组。');
     }
 
-    const hasStructure = messages.every(message => {
-      if (!message || typeof message !== 'object') return false;
-      const role = message.role || message.author_role || message.author || message.sender;
-      const content = message.content || message.body || message.text || (message.message && message.message.content);
-      return Boolean(role && content);
-    });
-
-    if (!hasStructure) {
-      throw new Error('消息结构不完整，缺少 role 或 content 字段。');
-    }
+    return msgs; // 只返回候选数组，不做逐条校验
   }
 
   updateStatus(type, message) {
