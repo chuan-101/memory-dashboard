@@ -53,8 +53,8 @@ export class App {
     try {
       const text = await this.readFile(file);
       const parsed = this.parseJson(text);
-      const messages = this.extractMessages(parsed);
-      this.validateMessages(messages);
+      const rawMessages = this.extractMessages(parsed);
+      const messages = this.validateMessages(rawMessages);
 
       this.activeMessages = messages;
       await this.refreshDashboard();
@@ -238,28 +238,55 @@ export class App {
       throw new Error('消息数组为空。');
     }
 
-    const structured = messages.filter(message => message && typeof message === 'object');
-    if (!structured.length) {
-      throw new Error('消息结构不完整，缺少消息体。');
-    }
+    const parser = this.parser || new Parser();
+    const skippedIds = [];
+    const validMessages = [];
 
-    const hasRole = structured.some(message => {
-      const role =
-        message?.role ??
-        message?.author?.role ??
-        message?.author_role ??
-        (typeof message?.author === 'string' ? message.author : null) ??
-        message?.participant ??
-        message?.sender;
-      if (typeof role === 'string') {
-        return role.trim().length > 0;
+    const resolveMessageId = message =>
+      message?.id ??
+      message?.message_id ??
+      message?.uuid ??
+      message?.key ??
+      message?.conversation_id ??
+      message?.metadata?.message_id ??
+      message?.message?.id ??
+      null;
+
+    messages.forEach(message => {
+      if (!message || typeof message !== 'object') {
+        skippedIds.push('unknown');
+        return;
       }
-      return Boolean(role);
+
+      const role =
+        message.role ??
+        message?.author?.role ??
+        message.author_role ??
+        (typeof message.author === 'string' ? message.author : null) ??
+        message.participant ??
+        message.sender ??
+        null;
+
+      const text = (parser.extractText(message) || '').trim();
+
+      if (role && text) {
+        validMessages.push(message);
+        return;
+      }
+
+      skippedIds.push(resolveMessageId(message) || 'unknown');
     });
 
-    if (!hasRole) {
-      throw new Error('消息结构不完整，缺少 role 字段。');
+    if (!validMessages.length) {
+      throw new Error('未找到可解析的消息文本内容。');
     }
+
+    if (skippedIds.length && typeof console !== 'undefined' && typeof console.debug === 'function') {
+      console.debug('跳过缺少文本内容或角色信息的消息：', skippedIds);
+main
+    }
+
+    return validMessages;
   }
 
   updateStatus(type, message) {
