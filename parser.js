@@ -93,11 +93,18 @@ export function normalizeMessage(m) {
     text = '';
   }
 
-  if (typeof text !== 'string') {
-    text = String(text ?? '');
+
+  let text = '';
+  for (const candidate of contentCandidates) {
+    text = pickText(candidate);
+    if (text) {
+      break;
+    }
   }
 
+
   text = text.replace(/\s+/g, ' ').trim();
+
 
   if (!role || (role !== 'user' && role !== 'assistant')) {
     return null;

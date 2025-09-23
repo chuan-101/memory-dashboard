@@ -179,6 +179,7 @@ export class App {
   }
 
   extractMessages(raw) {
+    
     let msgs = Array.isArray(raw)
       ? raw
       : Array.isArray(raw?.messages)
@@ -206,18 +207,12 @@ export class App {
       });
     }
 
-    if (!msgs.length && Array.isArray(raw?.conversations)) {
-      msgs = raw.conversations.flatMap(conversation => {
-        if (Array.isArray(conversation?.messages)) return conversation.messages;
-        if (Array.isArray(conversation?.items)) return conversation.items;
-        if (conversation?.mapping) {
-          return Object.values(conversation.mapping)
-            .map(node => node?.message)
-            .filter(Boolean);
-        }
-        return [];
-      });
-    }
+      const hasContent =
+        candidate.content !== undefined ||
+        candidate.parts !== undefined ||
+        candidate.text !== undefined ||
+        candidate.delta !== undefined;
+
 
     if (!Array.isArray(msgs)) {
       return [];
@@ -225,6 +220,7 @@ export class App {
 
     return msgs;
   }
+
 
   validateMessages(raw) {
     return this.extractMessages(raw);
