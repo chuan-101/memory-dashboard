@@ -39,8 +39,8 @@ export class App {
     }
   }
 
-  async handleFileSelection(event) {
-    const file = event.target.files?.[0];
+  async handleFileSelection(evt) {
+    const file = evt.target.files?.[0];
     if (!file) {
       return;
     }
@@ -53,9 +53,11 @@ export class App {
     try {
       const text = await file.text();
       const raw = JSON.parse(text);
+
       const candidates = this.extractMessages(raw);
-      const normaliser = Parser.normaliseArray ?? Parser.normalizeArray;
-      const cleaned = typeof normaliser === 'function' ? normaliser(candidates) : [];
+
+      const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
+      const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
 
       if (!cleaned.length) {
         throw new Error('未找到可用于统计的 user/assistant 文本；请检查导出格式。');
@@ -179,9 +181,7 @@ export class App {
   }
 
   extractMessages(raw) {
-
-    
-    let msgs = Array.isArray(raw)
+    let arr = Array.isArray(raw)
       ? raw
       : Array.isArray(raw?.messages)
       ? raw.messages
@@ -193,34 +193,11 @@ export class App {
           .filter(Boolean)
       : [];
 
-    if (!Array.isArray(msgs)) msgs = [];
-
-    if (!msgs.length && Array.isArray(raw?.data)) {
-      msgs = raw.data.flatMap(item => {
-        if (Array.isArray(item?.messages)) return item.messages;
-        if (Array.isArray(item?.items)) return item.items;
-        if (item?.mapping) {
-          return Object.values(item.mapping)
-            .map(node => node?.message)
-            .filter(Boolean);
-        }
-        return [];
-      });
+    if ((!Array.isArray(arr) || !arr.length) && Array.isArray(raw?.data)) {
+      arr = raw.data.flatMap(entry => this.extractMessages(entry));
     }
 
-
-      const hasContent =
-        candidate.content !== undefined ||
-        candidate.parts !== undefined ||
-        candidate.text !== undefined ||
-        candidate.delta !== undefined;
-
-
-    if (!Array.isArray(msgs)) {
-      return [];
-    }
-
-    return msgs;
+    return Array.isArray(arr) ? arr : [];
   }
 
 
