@@ -68,6 +68,7 @@ export class ThemeManager {
     const theme = THEMES[resolvedKey];
 
     this.updateSelect(theme.key);
+    this.setThemeAttribute(theme.key);
     this.applyCssVariables(theme.cssVars);
 
     if (!skipPersist) {
@@ -80,6 +81,18 @@ export class ThemeManager {
   updateSelect(value) {
     if (this.selectElement && this.selectElement.value !== value) {
       this.selectElement.value = value;
+    }
+  }
+
+  setThemeAttribute(value) {
+    const root = document.documentElement;
+    if (root) {
+      root.setAttribute('data-theme', value);
+    }
+
+    const appRoot = document.querySelector('[data-app-root]');
+    if (appRoot) {
+      appRoot.setAttribute('data-theme', value);
     }
   }
 
