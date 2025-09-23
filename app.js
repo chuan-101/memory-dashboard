@@ -238,15 +238,27 @@ export class App {
       throw new Error('消息数组为空。');
     }
 
-    const hasStructure = messages.every(message => {
-      if (!message || typeof message !== 'object') return false;
-      const role = message.role || message.author_role || message.author || message.sender;
-      const content = message.content || message.body || message.text || (message.message && message.message.content);
-      return Boolean(role && content);
+    const structured = messages.filter(message => message && typeof message === 'object');
+    if (!structured.length) {
+      throw new Error('消息结构不完整，缺少消息体。');
+    }
+
+    const hasRole = structured.some(message => {
+      const role =
+        message?.role ??
+        message?.author?.role ??
+        message?.author_role ??
+        (typeof message?.author === 'string' ? message.author : null) ??
+        message?.participant ??
+        message?.sender;
+      if (typeof role === 'string') {
+        return role.trim().length > 0;
+      }
+      return Boolean(role);
     });
 
-    if (!hasStructure) {
-      throw new Error('消息结构不完整，缺少 role 或 content 字段。');
+    if (!hasRole) {
+      throw new Error('消息结构不完整，缺少 role 字段。');
     }
   }
 
