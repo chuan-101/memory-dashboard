@@ -11,12 +11,140 @@ const ROLE_DEFAULT_NAMES = {
   tool: 'Tool'
 };
 
+function extractPartsText(parts) {
+  if (!Array.isArray(parts)) {
+    return typeof parts === 'string' ? parts : '';
+  }
+
+  return parts
+    .map(part => {
+      if (typeof part === 'string') return part;
+      if (part && typeof part === 'object') {
+        if (typeof part.text === 'string') return part.text;
+        if (typeof part.content === 'string') return part.content;
+        if (typeof part.value === 'string') return part.value;
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function pickModel(message) {
+  const value =
+    message?.model ??
+    message?.metadata?.model ??
+    message?.meta?.model ??
+    message?.response_metadata?.model ??
+    message?.message?.metadata?.model ??
+    null;
+
+  return value == null ? null : value;
+}
+
+function pickTimestamp(message) {
+  const value =
+    message?.timestamp ??
+    message?.create_time ??
+    message?.createTime ??
+    message?.created_at ??
+    message?.created ??
+    message?.time ??
+    message?.date ??
+    message?.update_time ??
+    message?.message?.timestamp ??
+    message?.message?.create_time ??
+    null;
+
+  return value == null ? null : value;
+}
+
+export function normalizeMessage(msg) {
+  if (!msg || typeof msg !== 'object') {
+    return null;
+  }
+
+  const role =
+    msg.role ??
+    msg.author?.role ??
+    msg.message?.author?.role ??
+    msg.participant ??
+    msg.sender ??
+    null;
+
+  let text = extractPartsText(msg.content?.parts);
+
+  if (!text && typeof msg.content === 'string') {
+    text = msg.content;
+  }
+
+  if (!text && msg.content && typeof msg.content === 'object') {
+    text =
+      extractPartsText(msg.content.parts) ||
+      extractPartsText(msg.content.messages) ||
+      (typeof msg.content.text === 'string' ? msg.content.text : '') ||
+      (typeof msg.content.value === 'string' ? msg.content.value : '') ||
+      (typeof msg.content.content === 'string' ? msg.content.content : '');
+  }
+
+  if (!text && Array.isArray(msg.parts)) {
+    text = extractPartsText(msg.parts);
+  }
+
+  if (!text && msg.message) {
+    text =
+      extractPartsText(msg.message?.content?.parts) ||
+      (typeof msg.message?.content === 'string' ? msg.message.content : '') ||
+      (typeof msg.message?.text === 'string' ? msg.message.text : '');
+  }
+
+  if (typeof text !== 'string') {
+    text = String(text ?? '');
+  }
+
+  text = text.replace(/\s+/g, ' ').trim();
+
+  const normalizedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
+
+  if (!normalizedRole || (normalizedRole !== 'user' && normalizedRole !== 'assistant')) {
+    return null;
+  }
+
+  const visibleLength = text.replace(/\s+/g, '').length;
+  if (visibleLength < 2) {
+    return null;
+  }
+
+  const ts = pickTimestamp(msg);
+  const model = pickModel(msg);
+
+  return {
+    role: normalizedRole,
+    text,
+    ts,
+    model: model == null ? null : model,
+    raw: msg
+  };
+}
+
+export function normaliseArray(arr) {
+  if (!Array.isArray(arr)) {
+    return [];
+  }
+
+  return arr.map(normalizeMessage).filter(Boolean);
+}
+
 export class Parser {
   constructor({ stopWords = [] } = {}) {
     this.stopWords = new Set();
     this.setStopWords(stopWords);
     this.currentOverrides = {};
     this.jiebaReady = null;
+  }
+
+  static normaliseArray(arr) {
+    return normaliseArray(arr);
   }
 
   setStopWords(words = []) {
@@ -50,23 +178,23 @@ export class Parser {
     }
 
     const roleMessages = {
-      assistant: this.filterAssistantMessages(normalized),
-      user: this.filterUserMessages(normalized)
+      assistant: this.filterAssistantMessages(prepared),
+      user: this.filterUserMessages(prepared)
     };
 
-    const roleStats = this.computeRoleStats(normalized);
-    const monthlyHistogram = this.computeMonthlyHistogram(normalized);
-    const hourlyHistogram = this.computeHourlyHistogram(normalized);
-    const weekdayHistogram = this.computeWeekdayHistogram(normalized);
-    const modelDistribution = this.computeModelDistribution(normalized);
-    const dailyTrend = this.computeDailyTrend(normalized);
-    const earliestMessage = this.computeEarliestMessage(normalized);
-    const streak = this.computeStreak(normalized);
+    const roleStats = this.computeRoleStats(prepared);
+    const monthlyHistogram = this.computeMonthlyHistogram(prepared);
+    const hourlyHistogram = this.computeHourlyHistogram(prepared);
+    const weekdayHistogram = this.computeWeekdayHistogram(prepared);
+    const modelDistribution = this.computeModelDistribution(prepared);
+    const dailyTrend = this.computeDailyTrend(prepared);
+    const earliestMessage = this.computeEarliestMessage(prepared);
+    const streak = this.computeStreak(prepared);
     const peakHour = this.computePeakHour(hourlyHistogram);
-    const keywords = await this.extractTopKeywords(normalized);
+    const keywords = await this.extractTopKeywords(prepared);
 
     return {
-      messages: normalized,
+      messages: prepared,
       roleMessages,
       roleStats,
       monthlyHistogram,
@@ -78,6 +206,72 @@ export class Parser {
       streak,
       peakHour,
       keywords
+    };
+  }
+
+  prepareMessages(messages) {
+    if (!Array.isArray(messages)) {
+      return [];
+    }
+
+    const looksNormalised = messages.every(
+      message =>
+        message &&
+        typeof message === 'object' &&
+        typeof message.role === 'string' &&
+        typeof message.text === 'string'
+    );
+
+    const baseArray = looksNormalised ? messages : Parser.normaliseArray(messages);
+
+    return baseArray
+      .map(entry => this.composeMessage(entry))
+      .filter(Boolean);
+  }
+
+  composeMessage(entry) {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+
+    const role = (entry.role || '').toString().trim().toLowerCase();
+    if (!role || (role !== 'assistant' && role !== 'user')) {
+      return null;
+    }
+
+    const text = typeof entry.text === 'string' ? entry.text : String(entry.text ?? '');
+    if (text.replace(/\s+/g, '').length < 2) {
+      return null;
+    }
+
+    const timestamp = this.resolveTimestamp(entry);
+    const model = this.resolveModel(entry);
+    const wordCount = Number.isFinite(entry.wordCount) ? entry.wordCount : this.countWords(text);
+    const dayKey = timestamp ? this.formatDate(timestamp) : null;
+    const formattedTime = timestamp ? this.formatDate(timestamp, { includeTime: true }) : null;
+    const raw = entry.raw ?? entry.__raw ?? null;
+
+    const idCandidate =
+      entry.id ||
+      entry.message_id ||
+      entry.uuid ||
+      raw?.id ||
+      raw?.message_id ||
+      raw?.uuid;
+
+    return {
+      id:
+        idCandidate ||
+        `${role}-${timestamp || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role,
+      displayRole: this.getDisplayName(role),
+      text,
+      timestamp,
+      model,
+      wordCount,
+      dayKey,
+      formattedTime,
+      raw
     };
   }
 
@@ -572,23 +766,7 @@ export class Parser {
       message?.meta?.created_at ||
       message?.metadata?.created_at;
 
-    if (!timeValue) {
-      return null;
-    }
-
-    if (typeof timeValue === 'number') {
-      // seconds precision fallback
-      if (timeValue < 10 ** 12) {
-        return timeValue * 1000;
-      }
-      return timeValue;
-    }
-
-    const parsed = new Date(timeValue);
-    if (Number.isNaN(parsed.getTime())) {
-      return null;
-    }
-    return parsed.getTime();
+    return this.normalizeTimestampValue(timeValue);
   }
 
   extractModel(message) {
@@ -601,6 +779,61 @@ export class Parser {
       'unknown';
 
     return model.toString();
+  }
+
+  resolveTimestamp(entry) {
+    const direct = this.normalizeTimestampValue(entry.timestamp ?? entry.ts ?? null);
+    if (direct !== null && direct !== undefined) {
+      return direct;
+    }
+
+    if (entry.raw) {
+      const extracted = this.extractTimestamp(entry.raw);
+      if (extracted !== null && extracted !== undefined) {
+        return extracted;
+      }
+    }
+
+    return null;
+  }
+
+  resolveModel(entry) {
+    const value = entry.model ?? (entry.raw ? this.extractModel(entry.raw) : null);
+    if (value == null) {
+      return 'unknown';
+    }
+    return value.toString();
+  }
+
+  normalizeTimestampValue(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value < 10 ** 12 ? value * 1000 : value;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      const numeric = Number(trimmed);
+      if (!Number.isNaN(numeric)) {
+        return this.normalizeTimestampValue(numeric);
+      }
+
+      const parsed = new Date(trimmed);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+    }
+
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value.getTime();
+    }
+
+    return null;
   }
 
   countWords(text) {
