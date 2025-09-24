@@ -21,19 +21,12 @@ export class App {
     this.themeManager = new ThemeManager(this.themeSelect);
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
 
-    this.worker = null;
-    this.activeRequests = new Set();
-    this.latestRequestId = null;
-    this.processingToast = null;
-    this.activeRawMessages = null;
+    this.activeMessages = null;
     this.lastAnalysis = null;
-    this.lastMeta = null;
     this.lightMode = true;
 
     this.handleThemeChange = this.handleThemeChange.bind(this);
     this.handleLightModeToggle = this.handleLightModeToggle.bind(this);
-    this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
-    this.handleWorkerError = this.handleWorkerError.bind(this);
   }
 
   init() {
@@ -74,32 +67,41 @@ export class App {
       const raw = JSON.parse(text);
 
       const candidates = this.extractMessages(raw);
-
+      const dbg = document.getElementById('debug');
       const sample = candidates.slice(0, 3).map(x => ({
-        role: x?.author?.role ?? x?.role ?? 'none',
+        role: x?.author?.role ?? x?.role,
         hasParts: Array.isArray(x?.content?.parts),
         contentType: typeof x?.content
       }));
-      const dbg = document.getElementById('debug');
-      if (dbg) {
-        dbg.hidden = false;
-        dbg.textContent =
-          '[extract] total=' +
-          candidates.length +
-          '  roles=' +
-          JSON.stringify(
-            candidates.reduce((m, x) => {
-              const r = x?.author?.role ?? x?.role ?? 'none';
-              m[r] = (m[r] || 0) + 1;
-              return m;
-            }, {})
-          ) +
-          '\n' +
-          JSON.stringify(sample, null, 2);
+      dbg.hidden = false;
+      dbg.textContent =
+        '[extract] total=' +
+        candidates.length +
+        '  roles=' +
+        JSON.stringify(
+          candidates.reduce((m, x) => {
+            const r = x?.author?.role ?? x?.role ?? 'none';
+            m[r] = (m[r] || 0) + 1;
+            return m;
+          }, {})
+        ) +
+        '\n' +
+        JSON.stringify(sample, null, 2);
+
+      const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
+      const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
+
+      if (!cleaned.length) {
+        throw new Error('未找到可用于统计的 user/assistant 文本；请检查导出格式。');
       }
 
-      if (!candidates.length) {
-        throw new Error('未找到可用于统计的消息，请确认文件内容。');
+      this.activeMessages = cleaned;
+      this.lastAnalysis = null;
+
+      if (typeof this.dashboard.renderAll === 'function') {
+        this.dashboard.renderAll(cleaned);
+      } else {
+        await this.refreshDashboard();
       }
 
       this.activeRawMessages = candidates;
@@ -126,10 +128,27 @@ export class App {
       return;
     }
 
-    await this.requestAnalysis(this.activeRawMessages, {
-      overrides: this.getNameOverrides(),
-      stopWords: this.getStopWords()
-    });
+    if (this.activeMessages.length < 4) {
+      this.updateStatus('error', '消息数量不足，至少需要 4 条消息才能生成仪表盘。');
+      this.dashboardElement.hidden = true;
+      return;
+    }
+
+    const overrides = this.getNameOverrides();
+    const stopWords = this.getStopWords();
+
+    try {
+      const analysis = await this.parser.parse(this.activeMessages, { overrides, stopWords });
+      this.lastAnalysis = analysis;
+      this.dashboard.setLightMode?.(this.lightMode);
+      this.dashboard.render(analysis);
+      this.dashboardElement.hidden = false;
+    } catch (error) {
+      console.error(error);
+      this.updateStatus('error', error.message || '生成分析数据失败。');
+      this.dashboardElement.hidden = true;
+      this.lastAnalysis = null;
+    }
   }
 
   handlePreferenceSubmit(event) {
