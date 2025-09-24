@@ -50,8 +50,6 @@ export class App {
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
     this.worker = null;
     this.processingToast = null;
-    this.toast = null;
-    this.spinner = null;
     this.activeMessages = [];
     this.activeRawMessages = null;
     this.lastAnalysis = null;
@@ -379,10 +377,6 @@ export class App {
 
     this.isProcessing = false;
     this.hideProcessingToast();
-    this.toast?.clear?.();
-    this.toast = null;
-    this.spinner?.stop?.();
-    this.spinner = null;
 
     if (data.ok) {
       this.lastAnalysis = data.stats || null;
@@ -408,12 +402,16 @@ export class App {
       this.activeMessages = [];
       this.dashboardElement.hidden = true;
       const errorMessage = data.error || '生成分析数据失败。';
-      this.showError(errorMessage);
+      this.updateStatus('error', errorMessage);
+      this.showToast(errorMessage, {
+        title: '解析失败',
+        variant: 'error'
+      });
     }
   }
 
   handleWorkerError(event) {
-    console.error('Worker failed:', event);
+    console.error('Worker 解析失败：', event);
     this.isProcessing = false;
     this.hideProcessingToast();
     this.toast?.clear?.();
@@ -424,12 +422,16 @@ export class App {
     this.lastMeta = null;
     this.activeMessages = [];
     this.dashboardElement.hidden = true;
-    const reason =
+    const message =
       event?.message ||
       event?.error?.message ||
       event?.data?.error ||
-      '未知错误';
-    this.showError('解析失败：' + reason);
+      '后台解析失败，请重试。';
+    this.updateStatus('error', message);
+    this.showToast(message, {
+      title: '解析失败',
+      variant: 'error'
+    });
   }
 
   showProcessingToast() {
