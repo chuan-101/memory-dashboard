@@ -48,9 +48,14 @@ export class App {
 
     this.themeManager = new ThemeManager(this.themeSelect);
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
-    this.activeMessages = null;
+    this.worker = null;
+    this.processingToast = null;
+    this.activeMessages = [];
+    this.activeRawMessages = null;
     this.lastAnalysis = null;
+    this.lastMeta = null;
     this.lightMode = true;
+    this.isProcessing = false;
 
     this.handleThemeChange = this.handleThemeChange.bind(this);
     this.handleLightModeToggle = this.handleLightModeToggle.bind(this);
@@ -108,7 +113,7 @@ export class App {
       const candidates = this.extractMessages(raw);
       printDebug(candidates);
 
-      this.activeMessages = cleaned;
+      this.activeMessages = [];
       this.lastAnalysis = null;
 
       if (!candidates.length) {
@@ -149,16 +154,12 @@ export class App {
     const stopWords = this.getStopWords();
 
     try {
-      const analysis = await this.parser.parse(this.activeMessages, { overrides, stopWords });
-      this.lastAnalysis = analysis;
-      this.dashboard.setLightMode?.(this.lightMode);
-      this.dashboard.render(analysis);
-      this.dashboardElement.hidden = false;
+      await this.requestAnalysis(this.activeRawMessages, { overrides, stopWords });
     } catch (error) {
       console.error(error);
       this.updateStatus('error', error.message || '生成分析数据失败。');
       this.dashboardElement.hidden = true;
-      this.lastAnalysis = null;
+      this.hideProcessingToast();
     }
   }
 
@@ -335,10 +336,10 @@ export class App {
     }
 
     try {
-      this.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-      this.worker.addEventListener('message', this.handleWorkerMessage);
-      this.worker.addEventListener('messageerror', this.handleWorkerError);
-      this.worker.addEventListener('error', this.handleWorkerError);
+      this.worker = new Worker('worker.js');
+      this.worker.onmessage = event => this.handleWorkerMessage(event?.data);
+      this.worker.onerror = error => this.handleWorkerError(error);
+      this.worker.onmessageerror = error => this.handleWorkerError(error);
     } catch (error) {
       console.error('创建 Web Worker 失败：', error);
       this.worker = null;
@@ -351,14 +352,11 @@ export class App {
       throw new Error('后台解析未就绪。');
     }
 
-    const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    this.latestRequestId = requestId;
-    this.activeRequests.add(requestId);
+    this.isProcessing = true;
     this.showProcessingToast();
 
     this.worker.postMessage({
       type: 'process',
-      requestId,
       payload: {
         messages,
         options: {
@@ -371,64 +369,62 @@ export class App {
     this.updateStatus('info', '正在后台处理中，请稍候…');
   }
 
-  handleWorkerMessage(event) {
-    const { data } = event || {};
-    if (!data || !data.type) {
+  handleWorkerMessage(payload) {
+    const data = payload && payload.data ? payload.data : payload;
+    if (!data) {
       return;
     }
 
-    if (data.requestId) {
-      this.activeRequests.delete(data.requestId);
-    }
+    this.isProcessing = false;
+    this.hideProcessingToast();
 
-    if (data.type === 'result') {
-      if (this.latestRequestId && data.requestId !== this.latestRequestId) {
-        if (!this.activeRequests.size) {
-          this.hideProcessingToast();
-        }
-        return;
-      }
-
+    if (data.ok) {
       this.lastAnalysis = data.stats || null;
-      this.lastMeta = data.meta || null;
+      this.lastMeta = null;
 
       if (this.lastAnalysis) {
+        this.activeMessages = Array.isArray(this.lastAnalysis.messages)
+          ? this.lastAnalysis.messages
+          : [];
         this.dashboard.setLightMode?.(this.lightMode);
         this.dashboard.render(this.lastAnalysis);
         this.dashboardElement.hidden = false;
-        const messageCount =
-          data.meta?.messageCount ??
-          (Array.isArray(this.lastAnalysis?.messages) ? this.lastAnalysis.messages.length : 0);
+        const messageCount = this.activeMessages.length;
         this.updateStatus('success', `成功导入 ${messageCount} 条消息。`);
+        return;
       }
-    } else if (data.type === 'error') {
-      if (!this.latestRequestId || data.requestId === this.latestRequestId) {
-        this.lastAnalysis = null;
-        this.lastMeta = null;
-        this.dashboardElement.hidden = true;
-        this.updateStatus('error', data.message || '生成分析数据失败。');
-      }
-      this.showToast(data.message || '后台解析失败，请重试。', {
+
+      this.dashboardElement.hidden = true;
+      this.updateStatus('error', '生成分析数据失败。');
+    } else if (data.error) {
+      this.lastAnalysis = null;
+      this.lastMeta = null;
+      this.activeMessages = [];
+      this.dashboardElement.hidden = true;
+      const errorMessage = data.error || '生成分析数据失败。';
+      this.updateStatus('error', errorMessage);
+      this.showToast(errorMessage, {
         title: '解析失败',
         variant: 'error'
       });
-    }
-
-    if (!this.activeRequests.size) {
-      this.hideProcessingToast();
     }
   }
 
   handleWorkerError(event) {
     console.error('Worker 解析失败：', event);
-    this.activeRequests.clear();
-    this.latestRequestId = null;
+    this.isProcessing = false;
     this.hideProcessingToast();
     this.lastAnalysis = null;
     this.lastMeta = null;
+    this.activeMessages = [];
     this.dashboardElement.hidden = true;
-    this.updateStatus('error', '后台解析失败，请重试。');
-    this.showToast('后台解析失败，请重试。', {
+    const message =
+      event?.message ||
+      event?.error?.message ||
+      event?.data?.error ||
+      '后台解析失败，请重试。';
+    this.updateStatus('error', message);
+    this.showToast(message, {
       title: '解析失败',
       variant: 'error'
     });
