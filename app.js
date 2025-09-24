@@ -4,6 +4,34 @@ import { ThemeManager } from './themeManager.js';
 const NAME_STORAGE_KEY = 'memory-dashboard-name-overrides';
 const STOP_WORD_STORAGE_KEY = 'memory-dashboard-stopwords';
 
+function printDebug(candidates) {
+  if (typeof location === 'undefined' || !location.search.includes('debug=1')) {
+    return;
+  }
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const dbg = document.getElementById('debug');
+  if (!dbg) {
+    return;
+  }
+  const sample3 = candidates.slice(0, 3).map(x => ({
+    role: x?.author?.role ?? x?.role ?? 'none',
+    hasParts: Array.isArray(x?.content?.parts),
+    contentType: typeof x?.content
+  }));
+  const roleMap = candidates.reduce((m, x) => {
+    const r = x?.author?.role ?? x?.role ?? 'none';
+    m[r] = (m[r] || 0) + 1;
+    return m;
+  }, {});
+  dbg.hidden = false;
+  dbg.textContent =
+    '[extract] total=' + candidates.length +
+    '  roles=' + JSON.stringify(roleMap) + '\n' +
+    JSON.stringify(sample3, null, 2);
+}
+
 export class App {
   constructor() {
     this.fileInput = document.getElementById('fileInput');
@@ -78,49 +106,7 @@ export class App {
       const raw = JSON.parse(text);
 
       const candidates = this.extractMessages(raw);
-      const dbg = document.getElementById('debug');
-      const sample = candidates.slice(0, 3).map(x => ({
-        role: x?.author?.role ?? x?.role,
-        hasParts: Array.isArray(x?.content?.parts),
-        contentType: typeof x?.content
-      }));
-      dbg.hidden = false;
-      dbg.textContent =
-        '[extract] total=' +
-        candidates.length +
-        '  roles=' +
-        JSON.stringify(
-          candidates.reduce((m, x) => {
-            const r = x?.author?.role ?? x?.role ?? 'none';
-            m[r] = (m[r] || 0) + 1;
-            return m;
-          }, {})
-        ) +
-        '\n' +
-        JSON.stringify(sample, null, 2);
-
-      const sample = candidates.slice(0, 3).map(x => ({
-        role: x?.author?.role ?? x?.role ?? 'none',
-        hasParts: Array.isArray(x?.content?.parts),
-        contentType: typeof x?.content
-      }));
-      const dbg = document.getElementById('debug');
-      if (dbg) {
-        dbg.hidden = false;
-        dbg.textContent =
-          '[extract] total=' +
-          candidates.length +
-          '  roles=' +
-          JSON.stringify(
-            candidates.reduce((m, x) => {
-              const r = x?.author?.role ?? x?.role ?? 'none';
-              m[r] = (m[r] || 0) + 1;
-              return m;
-            }, {})
-          ) +
-          '\n' +
-          JSON.stringify(sample, null, 2);
-      }
+      printDebug(candidates);
 
       this.activeMessages = cleaned;
       this.lastAnalysis = null;
