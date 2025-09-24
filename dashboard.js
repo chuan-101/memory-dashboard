@@ -6,29 +6,6 @@ export class Dashboard {
     this.resizeObservers = new Map();
     this.lastData = null;
     this.lightMode = !!lightMode;
-    this.detailPageSize = 100;
-    this.detailCurrentPage = 1;
-    this.detailRows = [];
-    this.detailElements = {
-      section: null,
-      panel: null,
-      count: null,
-      content: null,
-      tableBody: null,
-      pagination: null,
-      pageInfo: null,
-      prev: null,
-      next: null
-    };
-
-    this.handleDetailToggle = this.handleDetailToggle.bind(this);
-    this.handleDetailPrev = this.handleDetailPrev.bind(this);
-    this.handleDetailNext = this.handleDetailNext.bind(this);
-
-    if (typeof document !== 'undefined') {
-      this.cacheDetailElements();
-      this.bindDetailEvents();
-    }
   }
 
   setThemeManager(themeManager) {
@@ -44,11 +21,6 @@ export class Dashboard {
     const keywords = Array.isArray(data.keywords) ? data.keywords : [];
     const keywordSample = this.lightMode ? keywords.slice(0, 50) : keywords;
     this.renderWordCloud(keywordSample);
-    if (this.lightMode) {
-      this.resetDetailView();
-    } else {
-      this.prepareDetailView(data);
-    }
   }
 
   updateTheme() {
@@ -59,9 +31,6 @@ export class Dashboard {
     const keywords = Array.isArray(this.lastData.keywords) ? this.lastData.keywords : [];
     const keywordSample = this.lightMode ? keywords.slice(0, 50) : keywords;
     this.renderWordCloud(keywordSample);
-    if (!this.lightMode) {
-      this.renderDetailPage();
-    }
   }
 
   renderKpis(data) {
@@ -588,6 +557,40 @@ export class Dashboard {
     return '未知';
   }
 
+  setLightMode(enabled) {
+    this.lightMode = !!enabled;
+    this.updateLightModeVisibility();
+  }
+
+  updateLightModeVisibility() {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const allChartCards = [
+      'chart-card-f1',
+      'chart-card-f2',
+      'chart-card-f3',
+      'chart-card-f4',
+      'chart-card-f5',
+      'chart-card-f6',
+      'chart-card-f7'
+    ];
+    const lightModeVisible = new Set(['chart-card-f1', 'chart-card-f3', 'chart-card-f5']);
+
+    allChartCards.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const shouldShow = this.lightMode ? lightModeVisible.has(id) : true;
+      el.hidden = !shouldShow;
+    });
+
+    const dashboardRoot = document.getElementById('dashboard');
+    if (dashboardRoot) {
+      dashboardRoot.dataset.mode = this.lightMode ? 'light' : 'full';
+    }
+  }
+
   createOrUpdateChart(key, canvasId, config) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof window === 'undefined' || typeof window.Chart === 'undefined') {
@@ -630,6 +633,23 @@ export class Dashboard {
       this.pendingChartFrames.delete(key);
     }
 
+    if (this.charts.has(key)) {
+      this.charts.get(key).destroy();
+      this.charts.delete(key);
+    }
+
+    if (!canvasId) {
+      return;
+    }
+
+    const canvas = document.getElementById(canvasId);
+    if (canvas && this.resizeObservers.has(canvas)) {
+      this.resizeObservers.get(canvas).disconnect();
+      this.resizeObservers.delete(canvas);
+    }
+  }
+
+  destroyChart(key, canvasId) {
     if (this.charts.has(key)) {
       this.charts.get(key).destroy();
       this.charts.delete(key);

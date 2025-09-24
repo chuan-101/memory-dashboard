@@ -17,25 +17,15 @@ export class App {
     this.assistantNameInput = document.getElementById('assistantName');
     this.stopWordsInput = document.getElementById('stopWords');
     this.toastLayer = document.getElementById('toastLayer');
-    this.debugElement = null;
-    this.debugEnabled = false;
 
     this.themeManager = new ThemeManager(this.themeSelect);
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
-
-    this.worker = null;
-    this.activeRequests = new Set();
-    this.latestRequestId = null;
-    this.processingToast = null;
-    this.activeRawMessages = null;
+    this.activeMessages = null;
     this.lastAnalysis = null;
-    this.lastMeta = null;
     this.lightMode = true;
 
     this.handleThemeChange = this.handleThemeChange.bind(this);
     this.handleLightModeToggle = this.handleLightModeToggle.bind(this);
-    this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
-    this.handleWorkerError = this.handleWorkerError.bind(this);
   }
 
   init() {
@@ -88,42 +78,52 @@ export class App {
       const raw = JSON.parse(text);
 
       const candidates = this.extractMessages(raw);
+      const dbg = document.getElementById('debug');
+      const sample = candidates.slice(0, 3).map(x => ({
+        role: x?.author?.role ?? x?.role,
+        hasParts: Array.isArray(x?.content?.parts),
+        contentType: typeof x?.content
+      }));
+      dbg.hidden = false;
+      dbg.textContent =
+        '[extract] total=' +
+        candidates.length +
+        '  roles=' +
+        JSON.stringify(
+          candidates.reduce((m, x) => {
+            const r = x?.author?.role ?? x?.role ?? 'none';
+            m[r] = (m[r] || 0) + 1;
+            return m;
+          }, {})
+        ) +
+        '\n' +
+        JSON.stringify(sample, null, 2);
 
       const sample = candidates.slice(0, 3).map(x => ({
         role: x?.author?.role ?? x?.role ?? 'none',
         hasParts: Array.isArray(x?.content?.parts),
         contentType: typeof x?.content
       }));
-      if (this.debugElement) {
-        if (this.debugEnabled) {
-          this.debugElement.hidden = false;
-          this.debugElement.textContent =
-            '[extract] total=' +
-            candidates.length +
-            '  roles=' +
-            JSON.stringify(
-              candidates.reduce((m, x) => {
-                const r = x?.author?.role ?? x?.role ?? 'none';
-                m[r] = (m[r] || 0) + 1;
-                return m;
-              }, {})
-            ) +
-            '\n' +
-            JSON.stringify(sample, null, 2);
-        } else {
-          this.debugElement.hidden = true;
-          this.debugElement.textContent = '';
-        }
+      const dbg = document.getElementById('debug');
+      if (dbg) {
+        dbg.hidden = false;
+        dbg.textContent =
+          '[extract] total=' +
+          candidates.length +
+          '  roles=' +
+          JSON.stringify(
+            candidates.reduce((m, x) => {
+              const r = x?.author?.role ?? x?.role ?? 'none';
+              m[r] = (m[r] || 0) + 1;
+              return m;
+            }, {})
+          ) +
+          '\n' +
+          JSON.stringify(sample, null, 2);
       }
 
-      if (candidates.length > 200000) {
-        this.activeRawMessages = null;
-        this.lastAnalysis = null;
-        this.lastMeta = null;
-        this.dashboardElement.hidden = true;
-        this.updateStatus('error', 'File is too large. Please split or trim.');
-        return;
-      }
+      this.activeMessages = cleaned;
+      this.lastAnalysis = null;
 
       if (!candidates.length) {
         throw new Error('未找到可用于统计的消息，请确认文件内容。');
@@ -153,10 +153,27 @@ export class App {
       return;
     }
 
-    await this.requestAnalysis(this.activeRawMessages, {
-      overrides: this.getNameOverrides(),
-      stopWords: this.getStopWords()
-    });
+    if (this.activeMessages.length < 4) {
+      this.updateStatus('error', '消息数量不足，至少需要 4 条消息才能生成仪表盘。');
+      this.dashboardElement.hidden = true;
+      return;
+    }
+
+    const overrides = this.getNameOverrides();
+    const stopWords = this.getStopWords();
+
+    try {
+      const analysis = await this.parser.parse(this.activeMessages, { overrides, stopWords });
+      this.lastAnalysis = analysis;
+      this.dashboard.setLightMode?.(this.lightMode);
+      this.dashboard.render(analysis);
+      this.dashboardElement.hidden = false;
+    } catch (error) {
+      console.error(error);
+      this.updateStatus('error', error.message || '生成分析数据失败。');
+      this.dashboardElement.hidden = true;
+      this.lastAnalysis = null;
+    }
   }
 
   handlePreferenceSubmit(event) {
