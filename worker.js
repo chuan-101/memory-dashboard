@@ -44,6 +44,7 @@ self.addEventListener('message', async event => {
   const stopWords = options.stopWords || [];
 
   try {
+
     const cleaned = typeof normaliseArray === 'function' ? normaliseArray(messages) : [];
 
     if (!cleaned.length) {

@@ -29,6 +29,18 @@ export class App {
   }
 
   init() {
+    this.debugElement = document.getElementById('debug');
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search || '');
+      this.debugEnabled = params.get('debug') === '1';
+    }
+    if (this.debugElement) {
+      this.debugElement.hidden = !this.debugEnabled;
+      if (!this.debugEnabled) {
+        this.debugElement.textContent = '';
+      }
+    }
+
     this.themeManager.init();
     this.themeManager.onChange(this.handleThemeChange);
     this.loadPreferences();
@@ -113,10 +125,8 @@ export class App {
       this.activeMessages = cleaned;
       this.lastAnalysis = null;
 
-      if (typeof this.dashboard.renderAll === 'function') {
-        this.dashboard.renderAll(cleaned);
-      } else {
-        await this.refreshDashboard();
+      if (!candidates.length) {
+        throw new Error('未找到可用于统计的消息，请确认文件内容。');
       }
 
       this.activeRawMessages = candidates;

@@ -2,6 +2,7 @@ export class Dashboard {
   constructor({ themeManager, lightMode = true } = {}) {
     this.themeManager = themeManager || null;
     this.charts = new Map();
+    this.pendingChartFrames = new Map();
     this.resizeObservers = new Map();
     this.lastData = null;
     this.lightMode = !!lightMode;
@@ -233,6 +234,10 @@ export class Dashboard {
     const container = document.getElementById('wordCloud');
     if (!container) return;
 
+    if (typeof window !== 'undefined' && typeof window.WordCloud === 'function' && typeof window.WordCloud.stop === 'function') {
+      window.WordCloud.stop();
+    }
+
     container.innerHTML = '';
 
     if (!keywords.length || typeof window === 'undefined' || typeof window.WordCloud !== 'function') {
@@ -244,18 +249,312 @@ export class Dashboard {
     }
 
     const palette = this.themeManager?.getPalette?.() || ['#38bdf8', '#f97316', '#a855f7'];
-    const list = keywords.map(item => [item.word, Math.max(12, Math.round(10 + item.normalizedWeight * 90))]);
+    const list = keywords.map(item => [item.word, Math.max(1, Math.round(item.weight || 1))]);
 
-    window.WordCloud(container, {
-      list,
-      backgroundColor: 'rgba(0,0,0,0)',
-      rotateRatio: 0,
-      fontFamily: 'inherit',
-      color: () => {
-        const index = Math.floor(Math.random() * palette.length);
-        return palette[index];
-      }
+    const renderCloud = () => {
+      window.WordCloud(container, {
+        list,
+        backgroundColor: 'rgba(0,0,0,0)',
+        rotateRatio: 0,
+        fontFamily: 'inherit',
+        weightFactor: weight => Math.max(1, Math.min(4, weight)),
+        color: () => {
+          const index = Math.floor(Math.random() * palette.length);
+          return palette[index];
+        }
+      });
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(renderCloud);
+    } else {
+      renderCloud();
+    }
+  }
+
+  setLightMode(enabled) {
+    this.lightMode = !!enabled;
+    this.updateLightModeVisibility();
+    if (this.lightMode) {
+      this.resetDetailView();
+    } else if (this.lastData) {
+      this.prepareDetailView(this.lastData);
+    }
+  }
+
+  updateLightModeVisibility() {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const allChartCards = [
+      'chart-card-f1',
+      'chart-card-f2',
+      'chart-card-f3',
+      'chart-card-f4',
+      'chart-card-f5',
+      'chart-card-f6',
+      'chart-card-f7'
+    ];
+    const lightModeVisible = new Set(['chart-card-f1', 'chart-card-f3', 'chart-card-f5']);
+
+    allChartCards.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const shouldShow = this.lightMode ? lightModeVisible.has(id) : true;
+      el.hidden = !shouldShow;
     });
+
+    const dashboardRoot = document.getElementById('dashboard');
+    if (dashboardRoot) {
+      dashboardRoot.dataset.mode = this.lightMode ? 'light' : 'full';
+    }
+
+    if (this.detailElements?.section) {
+      this.detailElements.section.hidden = this.lightMode;
+      if (this.lightMode) {
+        this.closeDetailPanel();
+      }
+    }
+  }
+
+  cacheDetailElements() {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const section = document.getElementById('detailSection');
+    const panel = document.getElementById('detailPanel');
+    this.detailElements = {
+      section: section || null,
+      panel: panel || null,
+      count: section?.querySelector('[data-detail-count]') || null,
+      content: section?.querySelector('[data-detail-content]') || null,
+      tableBody: section?.querySelector('[data-detail-body]') || null,
+      pagination: section?.querySelector('[data-detail-pagination]') || null,
+      pageInfo: section?.querySelector('[data-detail-page-info]') || null,
+      prev: section?.querySelector('[data-detail-prev]') || null,
+      next: section?.querySelector('[data-detail-next]') || null
+    };
+  }
+
+  bindDetailEvents() {
+    const { panel, prev, next } = this.detailElements;
+    if (panel) {
+      panel.addEventListener('toggle', this.handleDetailToggle);
+    }
+    if (prev) {
+      prev.addEventListener('click', this.handleDetailPrev);
+    }
+    if (next) {
+      next.addEventListener('click', this.handleDetailNext);
+    }
+  }
+
+  handleDetailToggle() {
+    if (!this.isDetailOpen()) {
+      this.clearDetailTable();
+      return;
+    }
+
+    if (!this.detailRows.length && this.lastData) {
+      this.prepareDetailView(this.lastData);
+    } else {
+      this.renderDetailPage();
+    }
+  }
+
+  handleDetailPrev(event) {
+    event.preventDefault();
+    if (this.detailCurrentPage <= 1) {
+      return;
+    }
+    this.detailCurrentPage -= 1;
+    this.renderDetailPage();
+  }
+
+  handleDetailNext(event) {
+    event.preventDefault();
+    const totalPages = Math.max(1, Math.ceil(this.detailRows.length / this.detailPageSize));
+    if (this.detailCurrentPage >= totalPages) {
+      return;
+    }
+    this.detailCurrentPage += 1;
+    this.renderDetailPage();
+  }
+
+  prepareDetailView(data) {
+    this.detailRows = this.buildDetailRows(data);
+    this.detailCurrentPage = 1;
+    this.updateDetailCount();
+    if (!this.isDetailOpen()) {
+      this.clearDetailTable();
+      this.updatePaginationControls();
+      return;
+    }
+    this.renderDetailPage();
+  }
+
+  buildDetailRows(data) {
+    if (!data || !Array.isArray(data.dailyTrend?.labels)) {
+      return [];
+    }
+
+    const labels = data.dailyTrend.labels;
+    const counts = Array.isArray(data.dailyTrend.data) ? data.dailyTrend.data : [];
+    const formatter = new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+
+    const rows = labels.map((label, index) => {
+      const count = counts[index] ?? 0;
+      const date = new Date(label);
+      const isValidDate = !Number.isNaN(date.getTime());
+      return {
+        key: label,
+        iso: label,
+        formatted: isValidDate ? formatter.format(date) : label,
+        weekday: isValidDate ? this.weekdayName(date.getDay()) : '未知',
+        count
+      };
+    });
+
+    return rows.sort((a, b) => b.iso.localeCompare(a.iso));
+  }
+
+  renderDetailPage() {
+    const { tableBody } = this.detailElements;
+    if (!tableBody) {
+      return;
+    }
+
+    tableBody.innerHTML = '';
+
+    if (!this.detailRows.length) {
+      this.renderEmptyDetailRow();
+      this.updatePaginationControls();
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(this.detailRows.length / this.detailPageSize));
+    if (this.detailCurrentPage > totalPages) {
+      this.detailCurrentPage = totalPages;
+    }
+    if (this.detailCurrentPage < 1) {
+      this.detailCurrentPage = 1;
+    }
+
+    const start = (this.detailCurrentPage - 1) * this.detailPageSize;
+    const end = Math.min(start + this.detailPageSize, this.detailRows.length);
+    const slice = this.detailRows.slice(start, end);
+
+    slice.forEach(row => {
+      const tr = document.createElement('tr');
+
+      const dateCell = document.createElement('td');
+      dateCell.textContent = row.formatted;
+      tr.appendChild(dateCell);
+
+      const weekdayCell = document.createElement('td');
+      weekdayCell.textContent = row.weekday;
+      tr.appendChild(weekdayCell);
+
+      const countCell = document.createElement('td');
+      countCell.textContent = row.count.toString();
+      tr.appendChild(countCell);
+
+      tableBody.appendChild(tr);
+    });
+
+    this.updatePaginationControls();
+  }
+
+  renderEmptyDetailRow() {
+    const { tableBody } = this.detailElements;
+    if (!tableBody) {
+      return;
+    }
+
+    const emptyRow = document.createElement('tr');
+    emptyRow.className = 'detail-empty-row';
+    const cell = document.createElement('td');
+    cell.colSpan = 3;
+    cell.textContent = '暂无每日互动数据。';
+    emptyRow.appendChild(cell);
+    tableBody.appendChild(emptyRow);
+  }
+
+  clearDetailTable() {
+    const { tableBody } = this.detailElements;
+    if (!tableBody) {
+      return;
+    }
+    tableBody.innerHTML = '';
+    this.renderEmptyDetailRow();
+  }
+
+  resetDetailView() {
+    this.detailRows = [];
+    this.detailCurrentPage = 1;
+    this.updateDetailCount();
+    this.clearDetailTable();
+    this.updatePaginationControls();
+  }
+
+  updateDetailCount() {
+    const { count } = this.detailElements;
+    if (!count) {
+      return;
+    }
+    const total = this.detailRows.length;
+    count.textContent = total ? `共 ${total} 天` : '';
+  }
+
+  updatePaginationControls() {
+    const { pagination, pageInfo, prev, next } = this.detailElements;
+    if (!pagination) {
+      return;
+    }
+
+    const total = this.detailRows.length;
+    const totalPages = Math.max(1, Math.ceil(total / this.detailPageSize));
+
+    if (total <= this.detailPageSize) {
+      pagination.hidden = true;
+    } else {
+      pagination.hidden = false;
+    }
+
+    if (pageInfo) {
+      pageInfo.textContent = total ? `${this.detailCurrentPage} / ${totalPages}` : '';
+    }
+    if (prev) {
+      prev.disabled = this.detailCurrentPage <= 1 || total === 0;
+    }
+    if (next) {
+      next.disabled = this.detailCurrentPage >= totalPages || total === 0;
+    }
+  }
+
+  closeDetailPanel() {
+    const { panel } = this.detailElements;
+    if (panel && panel.open) {
+      panel.open = false;
+    }
+  }
+
+  isDetailOpen() {
+    return !!this.detailElements?.panel?.open;
+  }
+
+  weekdayName(index) {
+    const names = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    if (Number.isInteger(index) && index >= 0 && index < names.length) {
+      return names[index];
+    }
+    return '未知';
   }
 
   setLightMode(enabled) {
@@ -298,15 +597,56 @@ export class Dashboard {
       return;
     }
 
+    const schedule = () => {
+      this.pendingChartFrames.delete(key);
+
+      if (this.charts.has(key)) {
+        try {
+          this.charts.get(key).destroy();
+        } catch (error) {
+          console.warn('销毁旧图表失败', error);
+        }
+        this.charts.delete(key);
+      }
+
+      const context = canvas.getContext('2d');
+      const chart = new window.Chart(context, config);
+      this.charts.set(key, chart);
+      this.observeCanvas(canvas, chart);
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      if (this.pendingChartFrames.has(key) && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(this.pendingChartFrames.get(key));
+        this.pendingChartFrames.delete(key);
+      }
+      const frameId = window.requestAnimationFrame(schedule);
+      this.pendingChartFrames.set(key, frameId);
+    } else {
+      schedule();
+    }
+  }
+
+  destroyChart(key, canvasId) {
+    if (this.pendingChartFrames.has(key) && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(this.pendingChartFrames.get(key));
+      this.pendingChartFrames.delete(key);
+    }
+
     if (this.charts.has(key)) {
       this.charts.get(key).destroy();
       this.charts.delete(key);
     }
 
-    const context = canvas.getContext('2d');
-    const chart = new window.Chart(context, config);
-    this.charts.set(key, chart);
-    this.observeCanvas(canvas, chart);
+    if (!canvasId) {
+      return;
+    }
+
+    const canvas = document.getElementById(canvasId);
+    if (canvas && this.resizeObservers.has(canvas)) {
+      this.resizeObservers.get(canvas).disconnect();
+      this.resizeObservers.delete(canvas);
+    }
   }
 
   destroyChart(key, canvasId) {
