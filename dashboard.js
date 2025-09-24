@@ -1,9 +1,10 @@
 export class Dashboard {
-  constructor({ themeManager } = {}) {
+  constructor({ themeManager, lightMode = true } = {}) {
     this.themeManager = themeManager || null;
     this.charts = new Map();
     this.resizeObservers = new Map();
     this.lastData = null;
+    this.lightMode = !!lightMode;
   }
 
   setThemeManager(themeManager) {
@@ -13,16 +14,22 @@ export class Dashboard {
   render(data) {
     if (!data) return;
     this.lastData = data;
+    this.updateLightModeVisibility();
     this.renderKpis(data);
     this.renderCharts(data);
-    this.renderWordCloud(data.keywords || []);
+    const keywords = Array.isArray(data.keywords) ? data.keywords : [];
+    const keywordSample = this.lightMode ? keywords.slice(0, 50) : keywords;
+    this.renderWordCloud(keywordSample);
   }
 
   updateTheme() {
     if (!this.lastData) return;
+    this.updateLightModeVisibility();
     this.applyChartDefaults();
     this.renderCharts(this.lastData);
-    this.renderWordCloud(this.lastData.keywords || []);
+    const keywords = Array.isArray(this.lastData.keywords) ? this.lastData.keywords : [];
+    const keywordSample = this.lightMode ? keywords.slice(0, 50) : keywords;
+    this.renderWordCloud(keywordSample);
   }
 
   renderKpis(data) {
@@ -88,47 +95,80 @@ export class Dashboard {
       options: this.buildBarOptions({ suggestedMax: this.suggestedMax(data.monthlyHistogram?.data) })
     });
 
-    this.createOrUpdateChart('f2', 'chartF2', {
-      type: 'bar',
-      data: {
-        labels: data.hourlyHistogram?.labels || [],
-        datasets: [{
-          label: '消息数',
-          data: data.hourlyHistogram?.data || [],
-          backgroundColor: palette[1] || palette[0] || '#38bdf8',
-          borderRadius: 6
-        }]
-      },
-      options: this.buildBarOptions({ suggestedMax: this.suggestedMax(data.hourlyHistogram?.data) })
-    });
+    if (!this.lightMode) {
+      this.createOrUpdateChart('f2', 'chartF2', {
+        type: 'bar',
+        data: {
+          labels: data.hourlyHistogram?.labels || [],
+          datasets: [{
+            label: '消息数',
+            data: data.hourlyHistogram?.data || [],
+            backgroundColor: palette[1] || palette[0] || '#38bdf8',
+            borderRadius: 6
+          }]
+        },
+        options: this.buildBarOptions({ suggestedMax: this.suggestedMax(data.hourlyHistogram?.data) })
+      });
+    } else {
+      this.destroyChart('f2', 'chartF2');
+    }
 
-    this.createOrUpdateChart('f3', 'chartF3', {
-      type: 'bar',
-      data: {
-        labels: (data.roleStats || []).map(item => item.displayRole),
-        datasets: [{
-          label: '消息数',
-          data: (data.roleStats || []).map(item => item.messageCount),
-          backgroundColor: palette.slice(0, (data.roleStats || []).length),
-          borderRadius: 6
-        }]
-      },
-      options: this.buildBarOptions({ indexAxis: 'y', suggestedMax: this.suggestedMax((data.roleStats || []).map(item => item.messageCount)) })
-    });
+    const roleLabels = (data.roleStats || []).map(item => item.displayRole);
+    const roleMessageCounts = (data.roleStats || []).map(item => item.messageCount);
+    if (this.lightMode) {
+      this.createOrUpdateChart('f3', 'chartF3', {
+        type: 'doughnut',
+        data: {
+          labels: roleLabels,
+          datasets: [{
+            label: '消息占比',
+            data: roleMessageCounts,
+            backgroundColor: this.buildRepeatingPalette(palette, roleLabels.length)
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    } else {
+      this.createOrUpdateChart('f3', 'chartF3', {
+        type: 'bar',
+        data: {
+          labels: roleLabels,
+          datasets: [{
+            label: '消息数',
+            data: roleMessageCounts,
+            backgroundColor: palette.slice(0, roleLabels.length),
+            borderRadius: 6
+          }]
+        },
+        options: this.buildBarOptions({ indexAxis: 'y', suggestedMax: this.suggestedMax(roleMessageCounts) })
+      });
+    }
 
-    this.createOrUpdateChart('f4', 'chartF4', {
-      type: 'bar',
-      data: {
-        labels: (data.roleStats || []).map(item => item.displayRole),
-        datasets: [{
-          label: '字数',
-          data: (data.roleStats || []).map(item => item.wordCount),
-          backgroundColor: palette.slice(0, (data.roleStats || []).length).map(color => this.withOpacity(color, 0.8)),
-          borderRadius: 6
-        }]
-      },
-      options: this.buildBarOptions({ indexAxis: 'y', suggestedMax: this.suggestedMax((data.roleStats || []).map(item => item.wordCount)) })
-    });
+    if (!this.lightMode) {
+      this.createOrUpdateChart('f4', 'chartF4', {
+        type: 'bar',
+        data: {
+          labels: roleLabels,
+          datasets: [{
+            label: '字数',
+            data: (data.roleStats || []).map(item => item.wordCount),
+            backgroundColor: palette
+              .slice(0, roleLabels.length)
+              .map(color => this.withOpacity(color, 0.8)),
+            borderRadius: 6
+          }]
+        },
+        options: this.buildBarOptions({ indexAxis: 'y', suggestedMax: this.suggestedMax((data.roleStats || []).map(item => item.wordCount)) })
+      });
+    } else {
+      this.destroyChart('f4', 'chartF4');
+    }
 
     this.createOrUpdateChart('f5', 'chartF5', {
       type: 'doughnut',
@@ -151,37 +191,42 @@ export class Dashboard {
       }
     });
 
-    this.createOrUpdateChart('f6', 'chartF6', {
-      type: 'line',
-      data: {
-        labels: data.dailyTrend?.labels || [],
-        datasets: [{
-          label: '每日互动',
-          data: data.dailyTrend?.data || [],
-          fill: false,
-          borderColor: palette[0] || '#38bdf8',
-          backgroundColor: palette[0] || '#38bdf8',
-          tension: 0.25,
-          pointRadius: 2
-        }]
-      },
-      options: this.buildLineOptions({ suggestedMax: this.suggestedMax(data.dailyTrend?.data) })
-    });
+    if (!this.lightMode) {
+      this.createOrUpdateChart('f6', 'chartF6', {
+        type: 'line',
+        data: {
+          labels: data.dailyTrend?.labels || [],
+          datasets: [{
+            label: '每日互动',
+            data: data.dailyTrend?.data || [],
+            fill: false,
+            borderColor: palette[0] || '#38bdf8',
+            backgroundColor: palette[0] || '#38bdf8',
+            tension: 0.25,
+            pointRadius: 2
+          }]
+        },
+        options: this.buildLineOptions({ suggestedMax: this.suggestedMax(data.dailyTrend?.data) })
+      });
 
-    this.createOrUpdateChart('f7', 'chartF7', {
-      type: 'radar',
-      data: {
-        labels: data.weekdayHistogram?.labels || [],
-        datasets: [{
-          label: '周内活跃度',
-          data: data.weekdayHistogram?.data || [],
-          borderColor: palette[2] || palette[0] || '#38bdf8',
-          backgroundColor: this.withOpacity(palette[2] || palette[0] || '#38bdf8', 0.2),
-          pointBackgroundColor: palette[2] || palette[0] || '#38bdf8'
-        }]
-      },
-      options: this.buildRadarOptions({ suggestedMax: this.suggestedMax(data.weekdayHistogram?.data) })
-    });
+      this.createOrUpdateChart('f7', 'chartF7', {
+        type: 'radar',
+        data: {
+          labels: data.weekdayHistogram?.labels || [],
+          datasets: [{
+            label: '周内活跃度',
+            data: data.weekdayHistogram?.data || [],
+            borderColor: palette[2] || palette[0] || '#38bdf8',
+            backgroundColor: this.withOpacity(palette[2] || palette[0] || '#38bdf8', 0.2),
+            pointBackgroundColor: palette[2] || palette[0] || '#38bdf8'
+          }]
+        },
+        options: this.buildRadarOptions({ suggestedMax: this.suggestedMax(data.weekdayHistogram?.data) })
+      });
+    } else {
+      this.destroyChart('f6', 'chartF6');
+      this.destroyChart('f7', 'chartF7');
+    }
   }
 
   renderWordCloud(keywords) {
@@ -213,6 +258,40 @@ export class Dashboard {
     });
   }
 
+  setLightMode(enabled) {
+    this.lightMode = !!enabled;
+    this.updateLightModeVisibility();
+  }
+
+  updateLightModeVisibility() {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const allChartCards = [
+      'chart-card-f1',
+      'chart-card-f2',
+      'chart-card-f3',
+      'chart-card-f4',
+      'chart-card-f5',
+      'chart-card-f6',
+      'chart-card-f7'
+    ];
+    const lightModeVisible = new Set(['chart-card-f1', 'chart-card-f3', 'chart-card-f5']);
+
+    allChartCards.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const shouldShow = this.lightMode ? lightModeVisible.has(id) : true;
+      el.hidden = !shouldShow;
+    });
+
+    const dashboardRoot = document.getElementById('dashboard');
+    if (dashboardRoot) {
+      dashboardRoot.dataset.mode = this.lightMode ? 'light' : 'full';
+    }
+  }
+
   createOrUpdateChart(key, canvasId, config) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof window === 'undefined' || typeof window.Chart === 'undefined') {
@@ -228,6 +307,23 @@ export class Dashboard {
     const chart = new window.Chart(context, config);
     this.charts.set(key, chart);
     this.observeCanvas(canvas, chart);
+  }
+
+  destroyChart(key, canvasId) {
+    if (this.charts.has(key)) {
+      this.charts.get(key).destroy();
+      this.charts.delete(key);
+    }
+
+    if (!canvasId) {
+      return;
+    }
+
+    const canvas = document.getElementById(canvasId);
+    if (canvas && this.resizeObservers.has(canvas)) {
+      this.resizeObservers.get(canvas).disconnect();
+      this.resizeObservers.delete(canvas);
+    }
   }
 
   observeCanvas(canvas, chart) {
