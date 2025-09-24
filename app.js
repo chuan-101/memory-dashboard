@@ -56,28 +56,26 @@ export class App {
 
       const candidates = this.extractMessages(raw);
 
+      const dbg = document.getElementById('debug');
       const sample = candidates.slice(0, 3).map(x => ({
-        role: x?.author?.role ?? x?.role ?? 'none',
+        role: x?.author?.role ?? x?.role,
         hasParts: Array.isArray(x?.content?.parts),
         contentType: typeof x?.content
       }));
-      const dbg = document.getElementById('debug');
-      if (dbg) {
-        dbg.hidden = false;
-        dbg.textContent =
-          '[extract] total=' +
-          candidates.length +
-          '  roles=' +
-          JSON.stringify(
-            candidates.reduce((m, x) => {
-              const r = x?.author?.role ?? x?.role ?? 'none';
-              m[r] = (m[r] || 0) + 1;
-              return m;
-            }, {})
-          ) +
-          '\n' +
-          JSON.stringify(sample, null, 2);
-      }
+      dbg.hidden = false;
+      dbg.textContent =
+        '[extract] total=' +
+        candidates.length +
+        '  roles=' +
+        JSON.stringify(
+          candidates.reduce((m, x) => {
+            const r = x?.author?.role ?? x?.role ?? 'none';
+            m[r] = (m[r] || 0) + 1;
+            return m;
+          }, {})
+        ) +
+        '\n' +
+        JSON.stringify(sample, null, 2);
 
       const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
       const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
