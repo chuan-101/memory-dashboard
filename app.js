@@ -11,6 +11,8 @@ export class App {
     this.statusElement = document.getElementById('status');
     this.dashboardElement = document.getElementById('dashboard');
     this.themeSelect = document.getElementById('themeSelect');
+    this.lightModeToggle = document.getElementById('lightModeToggle');
+    this.lightModeHint = document.getElementById('lightModeHint');
     this.nameForm = document.getElementById('nameOverrides');
     this.userNameInput = document.getElementById('userName');
     this.assistantNameInput = document.getElementById('assistantName');
@@ -21,8 +23,11 @@ export class App {
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
 
     this.activeMessages = null;
+    this.lastAnalysis = null;
+    this.lightMode = true;
 
     this.handleThemeChange = this.handleThemeChange.bind(this);
+    this.handleLightModeToggle = this.handleLightModeToggle.bind(this);
   }
 
   init() {
@@ -33,6 +38,12 @@ export class App {
     if (this.fileInput) {
       this.fileInput.addEventListener('change', event => this.handleFileSelection(event));
     }
+
+    if (this.lightModeToggle) {
+      this.lightModeToggle.checked = true;
+      this.lightModeToggle.addEventListener('change', this.handleLightModeToggle);
+    }
+    this.setLightMode(this.lightModeToggle ? this.lightModeToggle.checked : true, { skipRender: true });
 
     if (this.nameForm) {
       this.nameForm.addEventListener('submit', event => this.handlePreferenceSubmit(event));
@@ -85,6 +96,7 @@ export class App {
       }
 
       this.activeMessages = cleaned;
+      this.lastAnalysis = null;
 
       if (typeof this.dashboard.renderAll === 'function') {
         this.dashboard.renderAll(cleaned);
@@ -118,12 +130,15 @@ export class App {
 
     try {
       const analysis = await this.parser.parse(this.activeMessages, { overrides, stopWords });
+      this.lastAnalysis = analysis;
+      this.dashboard.setLightMode?.(this.lightMode);
       this.dashboard.render(analysis);
       this.dashboardElement.hidden = false;
     } catch (error) {
       console.error(error);
       this.updateStatus('error', error.message || '生成分析数据失败。');
       this.dashboardElement.hidden = true;
+      this.lastAnalysis = null;
     }
   }
 
@@ -177,6 +192,27 @@ export class App {
 
   handleThemeChange() {
     this.dashboard.updateTheme();
+  }
+
+  handleLightModeToggle(event) {
+    const enabled = !!event.target.checked;
+    this.setLightMode(enabled);
+  }
+
+  setLightMode(enabled, { skipRender = false } = {}) {
+    this.lightMode = !!enabled;
+    if (this.lightModeHint) {
+      this.lightModeHint.hidden = !this.lightMode;
+    }
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.dataset.lightMode = this.lightMode ? 'on' : 'off';
+    }
+    this.dashboard.setLightMode?.(this.lightMode);
+
+    if (!skipRender && this.lastAnalysis) {
+      this.dashboard.render(this.lastAnalysis);
+      this.dashboardElement.hidden = false;
+    }
   }
 
   getNameOverrides() {
