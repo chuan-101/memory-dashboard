@@ -20,7 +20,6 @@ export class App {
 
     this.themeManager = new ThemeManager(this.themeSelect);
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
-
     this.activeMessages = null;
     this.lastAnalysis = null;
     this.lightMode = true;
@@ -88,11 +87,27 @@ export class App {
         '\n' +
         JSON.stringify(sample, null, 2);
 
-      const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
-      const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
-
-      if (!cleaned.length) {
-        throw new Error('未找到可用于统计的 user/assistant 文本；请检查导出格式。');
+      const sample = candidates.slice(0, 3).map(x => ({
+        role: x?.author?.role ?? x?.role ?? 'none',
+        hasParts: Array.isArray(x?.content?.parts),
+        contentType: typeof x?.content
+      }));
+      const dbg = document.getElementById('debug');
+      if (dbg) {
+        dbg.hidden = false;
+        dbg.textContent =
+          '[extract] total=' +
+          candidates.length +
+          '  roles=' +
+          JSON.stringify(
+            candidates.reduce((m, x) => {
+              const r = x?.author?.role ?? x?.role ?? 'none';
+              m[r] = (m[r] || 0) + 1;
+              return m;
+            }, {})
+          ) +
+          '\n' +
+          JSON.stringify(sample, null, 2);
       }
 
       this.activeMessages = cleaned;

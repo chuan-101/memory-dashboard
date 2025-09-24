@@ -30,7 +30,6 @@ function ensureImportScripts() {
 ensureImportScripts();
 importScripts('vendor/jieba.min.js');
 
-const parser = new Parser();
 const normaliseArray = Parser.normaliseArray || Parser.normalizeArray;
 
 self.addEventListener('message', async event => {
