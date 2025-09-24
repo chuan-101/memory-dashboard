@@ -414,6 +414,10 @@ export class App {
     console.error('Worker 解析失败：', event);
     this.isProcessing = false;
     this.hideProcessingToast();
+    this.toast?.clear?.();
+    this.toast = null;
+    this.spinner?.stop?.();
+    this.spinner = null;
     this.lastAnalysis = null;
     this.lastMeta = null;
     this.activeMessages = [];
@@ -447,6 +451,20 @@ export class App {
       this.processingToast.remove();
     }
     this.processingToast = null;
+  }
+
+  showError(message) {
+    const finalMessage = message || '解析失败：未知错误';
+    this.updateStatus('error', finalMessage);
+    if (!this.toastLayer) {
+      this.toast = null;
+      return;
+    }
+    this.toast?.clear?.();
+    this.toast = this.showToast(finalMessage, {
+      title: '解析失败',
+      variant: 'error'
+    });
   }
 
   showToast(message, { title = '', variant = 'info', autoHide = 3200 } = {}) {
@@ -484,14 +502,18 @@ export class App {
       }, duration);
     }
 
+    const clear = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      toast.remove();
+    };
+
     return {
       element: toast,
-      remove: () => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        toast.remove();
-      }
+      remove: clear,
+      clear
     };
   }
 
