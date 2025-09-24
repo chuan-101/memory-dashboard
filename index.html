@@ -22,6 +22,10 @@
           <option value="emotion">Emotion</option>
         </select>
       </label>
+      <label class="theme-selector" for="lightModeToggle">
+        <span class="theme-selector__label">轻量模式（适合大文件）</span>
+        <input type="checkbox" id="lightModeToggle" name="lightMode" checked>
+      </label>
       <p id="themeHelp" class="visually-hidden">选择界面配色方案。</p>
     </div>
   </header>
@@ -40,6 +44,8 @@
         <button type="button" class="secondary" id="openNameDialog" data-action="open-name-dialog" aria-haspopup="dialog" aria-controls="nameOverrideDialog">配置角色命名与停用词</button>
       </div>
     </section>
+
+    <pre id="debug" hidden></pre>
 
     <dialog id="nameOverrideDialog" class="name-dialog" aria-labelledby="nameDialogTitle" aria-describedby="nameDialogDesc" data-dialog="name-overrides" open>
       <form id="nameOverrides" class="control-group" method="dialog" data-form="name-overrides">
@@ -72,6 +78,9 @@
       <div id="status" class="status" role="alert" data-status-target></div>
       <div id="insufficientDataBanner" class="status status--warning" role="alert" hidden data-banner="insufficient-data">
         数据量不足：请导入至少四条消息以生成完整的可视化。
+      </div>
+      <div id="lightModeHint" class="status status--info" role="status" hidden>
+        Light mode is on. Only aggregates are shown.
       </div>
     </section>
 
