@@ -4,6 +4,34 @@ import { ThemeManager } from './themeManager.js';
 const NAME_STORAGE_KEY = 'memory-dashboard-name-overrides';
 const STOP_WORD_STORAGE_KEY = 'memory-dashboard-stopwords';
 
+function printDebug(candidates) {
+  if (typeof location === 'undefined' || !location.search.includes('debug=1')) {
+    return;
+  }
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const dbg = document.getElementById('debug');
+  if (!dbg) {
+    return;
+  }
+  const sample3 = candidates.slice(0, 3).map(x => ({
+    role: x?.author?.role ?? x?.role ?? 'none',
+    hasParts: Array.isArray(x?.content?.parts),
+    contentType: typeof x?.content
+  }));
+  const roleMap = candidates.reduce((m, x) => {
+    const r = x?.author?.role ?? x?.role ?? 'none';
+    m[r] = (m[r] || 0) + 1;
+    return m;
+  }, {});
+  dbg.hidden = false;
+  dbg.textContent =
+    '[extract] total=' + candidates.length +
+    '  roles=' + JSON.stringify(roleMap) + '\n' +
+    JSON.stringify(sample3, null, 2);
+}
+
 export class App {
   constructor() {
     this.fileInput = document.getElementById('fileInput');
@@ -20,9 +48,16 @@ export class App {
 
     this.themeManager = new ThemeManager(this.themeSelect);
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
-    this.activeMessages = null;
+    this.worker = null;
+    this.processingToast = null;
+    this.toast = null;
+    this.spinner = null;
+    this.activeMessages = [];
+    this.activeRawMessages = null;
     this.lastAnalysis = null;
+    this.lastMeta = null;
     this.lightMode = true;
+    this.isProcessing = false;
 
     this.handleThemeChange = this.handleThemeChange.bind(this);
     this.handleLightModeToggle = this.handleLightModeToggle.bind(this);
@@ -78,51 +113,9 @@ export class App {
       const raw = JSON.parse(text);
 
       const candidates = this.extractMessages(raw);
-      const dbg = document.getElementById('debug');
-      const sample = candidates.slice(0, 3).map(x => ({
-        role: x?.author?.role ?? x?.role,
-        hasParts: Array.isArray(x?.content?.parts),
-        contentType: typeof x?.content
-      }));
-      dbg.hidden = false;
-      dbg.textContent =
-        '[extract] total=' +
-        candidates.length +
-        '  roles=' +
-        JSON.stringify(
-          candidates.reduce((m, x) => {
-            const r = x?.author?.role ?? x?.role ?? 'none';
-            m[r] = (m[r] || 0) + 1;
-            return m;
-          }, {})
-        ) +
-        '\n' +
-        JSON.stringify(sample, null, 2);
+      printDebug(candidates);
 
-      const sample = candidates.slice(0, 3).map(x => ({
-        role: x?.author?.role ?? x?.role ?? 'none',
-        hasParts: Array.isArray(x?.content?.parts),
-        contentType: typeof x?.content
-      }));
-      const dbg = document.getElementById('debug');
-      if (dbg) {
-        dbg.hidden = false;
-        dbg.textContent =
-          '[extract] total=' +
-          candidates.length +
-          '  roles=' +
-          JSON.stringify(
-            candidates.reduce((m, x) => {
-              const r = x?.author?.role ?? x?.role ?? 'none';
-              m[r] = (m[r] || 0) + 1;
-              return m;
-            }, {})
-          ) +
-          '\n' +
-          JSON.stringify(sample, null, 2);
-      }
-
-      this.activeMessages = cleaned;
+      this.activeMessages = [];
       this.lastAnalysis = null;
 
       if (!candidates.length) {
@@ -163,16 +156,12 @@ export class App {
     const stopWords = this.getStopWords();
 
     try {
-      const analysis = await this.parser.parse(this.activeMessages, { overrides, stopWords });
-      this.lastAnalysis = analysis;
-      this.dashboard.setLightMode?.(this.lightMode);
-      this.dashboard.render(analysis);
-      this.dashboardElement.hidden = false;
+      await this.requestAnalysis(this.activeRawMessages, { overrides, stopWords });
     } catch (error) {
       console.error(error);
       this.updateStatus('error', error.message || '生成分析数据失败。');
       this.dashboardElement.hidden = true;
-      this.lastAnalysis = null;
+      this.hideProcessingToast();
     }
   }
 
@@ -349,10 +338,10 @@ export class App {
     }
 
     try {
-      this.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-      this.worker.addEventListener('message', this.handleWorkerMessage);
-      this.worker.addEventListener('messageerror', this.handleWorkerError);
-      this.worker.addEventListener('error', this.handleWorkerError);
+      this.worker = new Worker('worker.js');
+      this.worker.onmessage = event => this.handleWorkerMessage(event?.data);
+      this.worker.onerror = error => this.handleWorkerError(error);
+      this.worker.onmessageerror = error => this.handleWorkerError(error);
     } catch (error) {
       console.error('创建 Web Worker 失败：', error);
       this.worker = null;
@@ -365,14 +354,11 @@ export class App {
       throw new Error('后台解析未就绪。');
     }
 
-    const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    this.latestRequestId = requestId;
-    this.activeRequests.add(requestId);
+    this.isProcessing = true;
     this.showProcessingToast();
 
     this.worker.postMessage({
       type: 'process',
-      requestId,
       payload: {
         messages,
         options: {
@@ -385,67 +371,65 @@ export class App {
     this.updateStatus('info', '正在后台处理中，请稍候…');
   }
 
-  handleWorkerMessage(event) {
-    const { data } = event || {};
-    if (!data || !data.type) {
+  handleWorkerMessage(payload) {
+    const data = payload && payload.data ? payload.data : payload;
+    if (!data) {
       return;
     }
 
-    if (data.requestId) {
-      this.activeRequests.delete(data.requestId);
-    }
+    this.isProcessing = false;
+    this.hideProcessingToast();
+    this.toast?.clear?.();
+    this.toast = null;
+    this.spinner?.stop?.();
+    this.spinner = null;
 
-    if (data.type === 'result') {
-      if (this.latestRequestId && data.requestId !== this.latestRequestId) {
-        if (!this.activeRequests.size) {
-          this.hideProcessingToast();
-        }
-        return;
-      }
-
+    if (data.ok) {
       this.lastAnalysis = data.stats || null;
-      this.lastMeta = data.meta || null;
+      this.lastMeta = null;
 
       if (this.lastAnalysis) {
+        this.activeMessages = Array.isArray(this.lastAnalysis.messages)
+          ? this.lastAnalysis.messages
+          : [];
         this.dashboard.setLightMode?.(this.lightMode);
         this.dashboard.render(this.lastAnalysis);
         this.dashboardElement.hidden = false;
-        const messageCount =
-          data.meta?.messageCount ??
-          (Array.isArray(this.lastAnalysis?.messages) ? this.lastAnalysis.messages.length : 0);
+        const messageCount = this.activeMessages.length;
         this.updateStatus('success', `成功导入 ${messageCount} 条消息。`);
+        return;
       }
-    } else if (data.type === 'error') {
-      if (!this.latestRequestId || data.requestId === this.latestRequestId) {
-        this.lastAnalysis = null;
-        this.lastMeta = null;
-        this.dashboardElement.hidden = true;
-        this.updateStatus('error', data.message || '生成分析数据失败。');
-      }
-      this.showToast(data.message || '后台解析失败，请重试。', {
-        title: '解析失败',
-        variant: 'error'
-      });
-    }
 
-    if (!this.activeRequests.size) {
-      this.hideProcessingToast();
+      this.dashboardElement.hidden = true;
+      this.updateStatus('error', '生成分析数据失败。');
+    } else if (data.error) {
+      this.lastAnalysis = null;
+      this.lastMeta = null;
+      this.activeMessages = [];
+      this.dashboardElement.hidden = true;
+      const errorMessage = data.error || '生成分析数据失败。';
+      this.showError(errorMessage);
     }
   }
 
   handleWorkerError(event) {
-    console.error('Worker 解析失败：', event);
-    this.activeRequests.clear();
-    this.latestRequestId = null;
+    console.error('Worker failed:', event);
+    this.isProcessing = false;
     this.hideProcessingToast();
+    this.toast?.clear?.();
+    this.toast = null;
+    this.spinner?.stop?.();
+    this.spinner = null;
     this.lastAnalysis = null;
     this.lastMeta = null;
+    this.activeMessages = [];
     this.dashboardElement.hidden = true;
-    this.updateStatus('error', '后台解析失败，请重试。');
-    this.showToast('后台解析失败，请重试。', {
-      title: '解析失败',
-      variant: 'error'
-    });
+    const reason =
+      event?.message ||
+      event?.error?.message ||
+      event?.data?.error ||
+      '未知错误';
+    this.showError('解析失败：' + reason);
   }
 
   showProcessingToast() {
@@ -465,6 +449,20 @@ export class App {
       this.processingToast.remove();
     }
     this.processingToast = null;
+  }
+
+  showError(message) {
+    const finalMessage = message || '解析失败：未知错误';
+    this.updateStatus('error', finalMessage);
+    if (!this.toastLayer) {
+      this.toast = null;
+      return;
+    }
+    this.toast?.clear?.();
+    this.toast = this.showToast(finalMessage, {
+      title: '解析失败',
+      variant: 'error'
+    });
   }
 
   showToast(message, { title = '', variant = 'info', autoHide = 3200 } = {}) {
@@ -502,14 +500,18 @@ export class App {
       }, duration);
     }
 
+    const clear = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      toast.remove();
+    };
+
     return {
       element: toast,
-      remove: () => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        toast.remove();
-      }
+      remove: clear,
+      clear
     };
   }
 
