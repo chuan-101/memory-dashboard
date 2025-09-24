@@ -11,6 +11,8 @@ export class App {
     this.statusElement = document.getElementById('status');
     this.dashboardElement = document.getElementById('dashboard');
     this.themeSelect = document.getElementById('themeSelect');
+    this.lightModeToggle = document.getElementById('lightModeToggle');
+    this.lightModeHint = document.getElementById('lightModeHint');
     this.nameForm = document.getElementById('nameOverrides');
     this.userNameInput = document.getElementById('userName');
     this.assistantNameInput = document.getElementById('assistantName');
@@ -21,8 +23,11 @@ export class App {
     this.dashboard = new Dashboard({ themeManager: this.themeManager });
 
     this.activeMessages = null;
+    this.lastAnalysis = null;
+    this.lightMode = true;
 
     this.handleThemeChange = this.handleThemeChange.bind(this);
+    this.handleLightModeToggle = this.handleLightModeToggle.bind(this);
   }
 
   init() {
@@ -33,6 +38,12 @@ export class App {
     if (this.fileInput) {
       this.fileInput.addEventListener('change', event => this.handleFileSelection(event));
     }
+
+    if (this.lightModeToggle) {
+      this.lightModeToggle.checked = true;
+      this.lightModeToggle.addEventListener('change', this.handleLightModeToggle);
+    }
+    this.setLightMode(this.lightModeToggle ? this.lightModeToggle.checked : true, { skipRender: true });
 
     if (this.nameForm) {
       this.nameForm.addEventListener('submit', event => this.handlePreferenceSubmit(event));
@@ -56,6 +67,29 @@ export class App {
 
       const candidates = this.extractMessages(raw);
 
+      const sample = candidates.slice(0, 3).map(x => ({
+        role: x?.author?.role ?? x?.role ?? 'none',
+        hasParts: Array.isArray(x?.content?.parts),
+        contentType: typeof x?.content
+      }));
+      const dbg = document.getElementById('debug');
+      if (dbg) {
+        dbg.hidden = false;
+        dbg.textContent =
+          '[extract] total=' +
+          candidates.length +
+          '  roles=' +
+          JSON.stringify(
+            candidates.reduce((m, x) => {
+              const r = x?.author?.role ?? x?.role ?? 'none';
+              m[r] = (m[r] || 0) + 1;
+              return m;
+            }, {})
+          ) +
+          '\n' +
+          JSON.stringify(sample, null, 2);
+      }
+
       const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
       const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
 
@@ -64,6 +98,7 @@ export class App {
       }
 
       this.activeMessages = cleaned;
+      this.lastAnalysis = null;
 
       if (typeof this.dashboard.renderAll === 'function') {
         this.dashboard.renderAll(cleaned);
@@ -97,12 +132,15 @@ export class App {
 
     try {
       const analysis = await this.parser.parse(this.activeMessages, { overrides, stopWords });
+      this.lastAnalysis = analysis;
+      this.dashboard.setLightMode?.(this.lightMode);
       this.dashboard.render(analysis);
       this.dashboardElement.hidden = false;
     } catch (error) {
       console.error(error);
       this.updateStatus('error', error.message || '生成分析数据失败。');
       this.dashboardElement.hidden = true;
+      this.lastAnalysis = null;
     }
   }
 
@@ -158,6 +196,27 @@ export class App {
     this.dashboard.updateTheme();
   }
 
+  handleLightModeToggle(event) {
+    const enabled = !!event.target.checked;
+    this.setLightMode(enabled);
+  }
+
+  setLightMode(enabled, { skipRender = false } = {}) {
+    this.lightMode = !!enabled;
+    if (this.lightModeHint) {
+      this.lightModeHint.hidden = !this.lightMode;
+    }
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.dataset.lightMode = this.lightMode ? 'on' : 'off';
+    }
+    this.dashboard.setLightMode?.(this.lightMode);
+
+    if (!skipRender && this.lastAnalysis) {
+      this.dashboard.render(this.lastAnalysis);
+      this.dashboardElement.hidden = false;
+    }
+  }
+
   getNameOverrides() {
     const overrides = {};
     const userName = this.userNameInput?.value.trim();
@@ -180,24 +239,69 @@ export class App {
       .filter(Boolean);
   }
 
+  // app.js — robust extractor that always pushes the real "message"
   extractMessages(raw) {
-    let arr = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.messages)
-      ? raw.messages
-      : Array.isArray(raw?.items)
-      ? raw.items
-      : raw?.mapping
-      ? Object.values(raw.mapping)
-          .map(node => node?.message)
-          .filter(Boolean)
-      : [];
+    const out = [];
 
-    if ((!Array.isArray(arr) || !arr.length) && Array.isArray(raw?.data)) {
-      arr = raw.data.flatMap(entry => this.extractMessages(entry));
-    }
+    const collect = msg => {
+      if (!msg) return;
+      // 真正的消息对象通常具备 author/content 或 role/content
+      const hasAuthor = !!(msg.author && typeof msg.author.role === 'string');
+      const hasRole = typeof msg.role === 'string';
+      const hasContent = msg.content !== undefined;
+      if (hasAuthor || hasRole || hasContent) out.push(msg);
+    };
 
-    return Array.isArray(arr) ? arr : [];
+    const walk = v => {
+      if (!v) return;
+      if (Array.isArray(v)) {
+        v.forEach(walk);
+        return;
+      }
+      if (typeof v !== 'object') return;
+
+      // 1) 最常见容器：mapping
+      if (v.mapping && typeof v.mapping === 'object') {
+        Object.values(v.mapping).forEach(n => {
+          if (n && n.message) collect(n.message);
+        });
+      }
+
+      // 2) items/messages 等数组容器
+      if (Array.isArray(v.items)) {
+        v.items.forEach(it => {
+          if (it && it.message) collect(it.message);
+          else walk(it);
+        });
+      }
+      if (Array.isArray(v.messages)) {
+        v.messages.forEach(m => {
+          if (m && m.message) collect(m.message);
+          else collect(m); // some exports are already flat
+        });
+      }
+      if (Array.isArray(v.conversations)) {
+        v.conversations.forEach(walk);
+      }
+
+      // 3) 当前对象本身若含有 message，就收集 message
+      if (v.message && (v.message.author || v.message.role || v.message.content)) {
+        collect(v.message);
+      }
+
+      // 4) 当前对象若本身就像消息，也直接收集
+      if (v.author || v.role || v.content) {
+        collect(v);
+      }
+
+      // 5) 兜底：继续向下递归
+      Object.values(v).forEach(child => {
+        if (child && typeof child === 'object') walk(child);
+      });
+    };
+
+    walk(raw);
+    return out;
   }
 
 
