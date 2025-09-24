@@ -4,6 +4,15 @@ const DEFAULT_STOP_WORDS = [
   'has', 'will', 'would', 'could', 'should', 'can', 'about', 'into', 'over', 'after'
 ];
 
+const RUNTIME =
+  typeof globalThis !== 'undefined'
+    ? globalThis
+    : typeof self !== 'undefined'
+    ? self
+    : typeof window !== 'undefined'
+    ? window
+    : {};
+
 const ROLE_DEFAULT_NAMES = {
   assistant: 'Assistant',
   user: 'User',
@@ -582,7 +591,7 @@ export class Parser {
 
     const sorted = Array.from(frequencies.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 120);
+      .slice(0, 100);
 
     const maxFrequency = sorted[0]?.[1] || 1;
 
@@ -601,7 +610,7 @@ export class Parser {
     const hasJieba = await this.ensureJieba();
     if (hasJieba) {
       try {
-        const result = window.jieba.cut(text, false);
+        const result = RUNTIME?.jieba?.cut ? RUNTIME.jieba.cut(text, false) : null;
         if (Array.isArray(result)) {
           return result;
         }
@@ -631,20 +640,20 @@ export class Parser {
       return this.jiebaReady;
     }
 
-    if (typeof window === 'undefined' || typeof window.jieba === 'undefined') {
+    if (typeof RUNTIME === 'undefined' || !RUNTIME || typeof RUNTIME.jieba === 'undefined') {
       this.jiebaReady = false;
       return this.jiebaReady;
     }
 
-    if (typeof window.jieba.load === 'function') {
+    if (typeof RUNTIME.jieba.load === 'function') {
       try {
-        await window.jieba.load();
+        await RUNTIME.jieba.load();
       } catch (error) {
         console.warn('加载 jieba 词典失败。', error);
       }
     }
 
-    this.jiebaReady = typeof window.jieba.cut === 'function';
+    this.jiebaReady = typeof RUNTIME.jieba.cut === 'function';
     return this.jiebaReady;
   }
 
@@ -659,7 +668,7 @@ export class Parser {
     }
 
     const { role: baseRole, text } = coreFields;
- main
+
     const role = this.getRole({ ...raw, role: baseRole });
     const timestamp = this.extractTimestamp(raw);
     const model = this.extractModel(raw);
@@ -748,7 +757,6 @@ export class Parser {
     }
 
     return { role: normalizedRole, text };
- main
   }
 
   getRole(message) {
