@@ -153,6 +153,45 @@
           <div id="wordCloud" data-wordcloud="f8" role="img" aria-label="关键词云可视化画布"></div>
         </div>
       </section>
+
+      <section
+        id="detailSection"
+        class="dashboard-section detail-section"
+        aria-labelledby="detailHeading"
+        data-section="details"
+        hidden
+      >
+        <details id="detailPanel" class="detail-panel">
+          <summary class="detail-summary">
+            <h2 id="detailHeading">互动详情</h2>
+            <span class="detail-count" data-detail-count></span>
+          </summary>
+          <div class="detail-content" data-detail-content>
+            <p class="detail-hint">展开后可分页查看每日互动统计，单页最多展示 100 行，保障大文件下的性能。</p>
+            <div class="detail-table-wrapper">
+              <table class="detail-table" aria-describedby="detailHeading">
+                <thead>
+                  <tr>
+                    <th scope="col">日期</th>
+                    <th scope="col">星期</th>
+                    <th scope="col">消息数</th>
+                  </tr>
+                </thead>
+                <tbody data-detail-body>
+                  <tr class="detail-empty-row">
+                    <td colspan="3">暂无每日互动数据。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="detail-pagination" data-detail-pagination hidden>
+              <button type="button" class="ghost" data-detail-prev aria-label="上一页">上一页</button>
+              <span class="detail-page-info" data-detail-page-info></span>
+              <button type="button" class="ghost" data-detail-next aria-label="下一页">下一页</button>
+            </div>
+          </div>
+        </details>
+      </section>
     </section>
   </main>
 

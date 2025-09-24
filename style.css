@@ -599,6 +599,121 @@ button:focus-visible {
   width: 100%;
 }
 
+.detail-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+.detail-panel {
+  display: block;
+}
+
+.detail-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-md);
+  cursor: pointer;
+  user-select: none;
+}
+
+.detail-summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-summary::after {
+  content: '▾';
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition: transform var(--transition-base);
+}
+
+.detail-summary h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2vw, 1.4rem);
+}
+
+.detail-count {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.detail-panel[open] .detail-summary {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.detail-panel[open] .detail-summary::after {
+  transform: rotate(180deg);
+}
+
+.detail-content {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.detail-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.detail-table-wrapper {
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 420px;
+}
+
+.detail-table th,
+.detail-table td {
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.detail-table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.detail-table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.detail-empty-row td {
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.detail-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.detail-pagination button {
+  pointer-events: auto;
+}
+
+.detail-page-info {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
 .toast-layer {
   position: fixed;
   top: var(--space-lg);
