@@ -56,6 +56,29 @@ export class App {
 
       const candidates = this.extractMessages(raw);
 
+      const sample = candidates.slice(0, 3).map(x => ({
+        role: x?.author?.role ?? x?.role ?? 'none',
+        hasParts: Array.isArray(x?.content?.parts),
+        contentType: typeof x?.content
+      }));
+      const dbg = document.getElementById('debug');
+      if (dbg) {
+        dbg.hidden = false;
+        dbg.textContent =
+          '[extract] total=' +
+          candidates.length +
+          '  roles=' +
+          JSON.stringify(
+            candidates.reduce((m, x) => {
+              const r = x?.author?.role ?? x?.role ?? 'none';
+              m[r] = (m[r] || 0) + 1;
+              return m;
+            }, {})
+          ) +
+          '\n' +
+          JSON.stringify(sample, null, 2);
+      }
+
       const normaliseArray = Parser.normaliseArray ?? Parser.normalizeArray;
       const cleaned = typeof normaliseArray === 'function' ? normaliseArray(candidates) : [];
 
@@ -180,24 +203,69 @@ export class App {
       .filter(Boolean);
   }
 
+  // app.js — robust extractor that always pushes the real "message"
   extractMessages(raw) {
-    let arr = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.messages)
-      ? raw.messages
-      : Array.isArray(raw?.items)
-      ? raw.items
-      : raw?.mapping
-      ? Object.values(raw.mapping)
-          .map(node => node?.message)
-          .filter(Boolean)
-      : [];
+    const out = [];
 
-    if ((!Array.isArray(arr) || !arr.length) && Array.isArray(raw?.data)) {
-      arr = raw.data.flatMap(entry => this.extractMessages(entry));
-    }
+    const collect = msg => {
+      if (!msg) return;
+      // 真正的消息对象通常具备 author/content 或 role/content
+      const hasAuthor = !!(msg.author && typeof msg.author.role === 'string');
+      const hasRole = typeof msg.role === 'string';
+      const hasContent = msg.content !== undefined;
+      if (hasAuthor || hasRole || hasContent) out.push(msg);
+    };
 
-    return Array.isArray(arr) ? arr : [];
+    const walk = v => {
+      if (!v) return;
+      if (Array.isArray(v)) {
+        v.forEach(walk);
+        return;
+      }
+      if (typeof v !== 'object') return;
+
+      // 1) 最常见容器：mapping
+      if (v.mapping && typeof v.mapping === 'object') {
+        Object.values(v.mapping).forEach(n => {
+          if (n && n.message) collect(n.message);
+        });
+      }
+
+      // 2) items/messages 等数组容器
+      if (Array.isArray(v.items)) {
+        v.items.forEach(it => {
+          if (it && it.message) collect(it.message);
+          else walk(it);
+        });
+      }
+      if (Array.isArray(v.messages)) {
+        v.messages.forEach(m => {
+          if (m && m.message) collect(m.message);
+          else collect(m); // some exports are already flat
+        });
+      }
+      if (Array.isArray(v.conversations)) {
+        v.conversations.forEach(walk);
+      }
+
+      // 3) 当前对象本身若含有 message，就收集 message
+      if (v.message && (v.message.author || v.message.role || v.message.content)) {
+        collect(v.message);
+      }
+
+      // 4) 当前对象若本身就像消息，也直接收集
+      if (v.author || v.role || v.content) {
+        collect(v);
+      }
+
+      // 5) 兜底：继续向下递归
+      Object.values(v).forEach(child => {
+        if (child && typeof child === 'object') walk(child);
+      });
+    };
+
+    walk(raw);
+    return out;
   }
 
 
